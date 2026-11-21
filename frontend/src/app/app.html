@@ -1,0 +1,280 @@
+<main class="page-shell">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Packwell home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="m16 3 12 6.5v13L16 29 4 22.5v-13L16 3Z" />
+          <path d="m4.5 9.7 11.5 6.4 11.5-6.4M16 16.2V29M10 6.3l12 6.6" />
+        </svg>
+      </span>
+      <span class="brand-name">packwell<span>.</span></span>
+    </a>
+    <div class="topbar-meta">
+      <span class="status-dot"></span>
+      <span>PACKING WORKSPACE</span>
+      <span class="meta-divider"></span>
+      <span>LOCAL API PROXY</span>
+    </div>
+  </header>
+
+  <section class="intro">
+    <div class="intro-copy">
+      <p class="eyebrow"><span>01</span> SHIPPING INTELLIGENCE</p>
+      <h1>Make room for<br /><em>better shipping.</em></h1>
+      <p class="intro-description">
+        Add your packages and we’ll find a practical box count, respecting
+        real dimensions and weight limits.
+      </p>
+    </div>
+    <div class="intro-side-note">
+      <span class="side-note-line"></span>
+      <p>Thoughtful packing.<br /><strong>One less thing to figure out.</strong></p>
+    </div>
+  </section>
+
+  <div class="workspace">
+    <section class="panel input-panel" aria-labelledby="packages-heading">
+      <div class="panel-topline">
+        <div>
+          <p class="section-kicker">SHIPMENT SETUP</p>
+          <h2 id="packages-heading">Your packages</h2>
+        </div>
+        <span class="step-badge">STEP 01 <span>/ 02</span></span>
+      </div>
+
+      <form [formGroup]="packageForm" (ngSubmit)="calculateBoxes()">
+        <div class="token-block">
+          <div class="token-label-row">
+            <label for="api-token">API access token</label>
+            <span class="secure-label">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3 7h10v7H3z" />
+              </svg>
+              BEARER AUTH
+            </span>
+          </div>
+          <input
+            id="api-token"
+            type="password"
+            autocomplete="off"
+            [formControl]="apiToken"
+            placeholder="Paste the backend API token"
+          />
+          <p class="field-hint">Used for this request only; never saved in the browser.</p>
+          @if (apiToken.touched && apiToken.invalid) {
+            <p class="field-error">Enter the token configured for the backend.</p>
+          }
+        </div>
+
+        <div class="package-list-heading">
+          <div class="list-title">
+            <span class="list-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none">
+                <path d="m10 2 7 3.8v8.4L10 18l-7-3.8V5.8L10 2Z" />
+                <path d="m3.3 6 6.7 3.8L16.7 6M10 9.8V18" />
+              </svg>
+            </span>
+            <span>Package list</span>
+            <span class="item-count">{{ packages.length }} ITEMS</span>
+          </div>
+          <button
+            class="add-button"
+            type="button"
+            [disabled]="!canAddPackage || isSubmitting()"
+            (click)="addPackage()"
+          >
+            <span aria-hidden="true">+</span> Add package
+          </button>
+        </div>
+
+        <div class="package-list" formArrayName="packages">
+          @for (packageRow of packages.controls; track packageRow; let index = $index) {
+            <fieldset
+              class="package-card"
+              [formGroupName]="index"
+              [disabled]="isSubmitting()"
+            >
+              <div class="package-card-top">
+                <div class="package-index">
+                  <span>{{ index + 1 }}</span>
+                  <span>PACKAGE DETAILS</span>
+                </div>
+                <button
+                  class="remove-button"
+                  type="button"
+                  [attr.aria-label]="'Remove package ' + (index + 1)"
+                  (click)="removePackage(index)"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M4 6h12M8 6V4h4v2m-6 0 .7 10h6.6L14 6m-5 3v4m2-4v4" />
+                  </svg>
+                  Remove
+                </button>
+              </div>
+
+              <div class="field-grid">
+                <label class="field id-field">
+                  <span>Package ID</span>
+                  <input
+                    type="number"
+                    step="1"
+                    formControlName="id"
+                    [attr.aria-label]="'Package ' + (index + 1) + ' ID'"
+                  />
+                  @if (packageRow.controls.id.touched && packageRow.controls.id.invalid) {
+                    <small class="field-error">Enter a whole number.</small>
+                  }
+                </label>
+                <label class="field">
+                  <span>Width <small>units</small></span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    formControlName="width"
+                    [attr.aria-label]="'Package ' + (index + 1) + ' width'"
+                  />
+                  @if (packageRow.controls.width.touched && packageRow.controls.width.invalid) {
+                    <small class="field-error">Must be greater than 0.</small>
+                  }
+                </label>
+                <label class="field">
+                  <span>Height <small>units</small></span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    formControlName="height"
+                    [attr.aria-label]="'Package ' + (index + 1) + ' height'"
+                  />
+                  @if (packageRow.controls.height.touched && packageRow.controls.height.invalid) {
+                    <small class="field-error">Must be greater than 0.</small>
+                  }
+                </label>
+                <label class="field">
+                  <span>Length <small>units</small></span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    formControlName="length"
+                    [attr.aria-label]="'Package ' + (index + 1) + ' length'"
+                  />
+                  @if (packageRow.controls.length.touched && packageRow.controls.length.invalid) {
+                    <small class="field-error">Must be greater than 0.</small>
+                  }
+                </label>
+                <label class="field weight-field">
+                  <span>Weight <small>max 3,000</small></span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    formControlName="weight"
+                    [attr.aria-label]="'Package ' + (index + 1) + ' weight'"
+                  />
+                  @if (packageRow.controls.weight.touched && packageRow.controls.weight.invalid) {
+                    <small class="field-error">Cannot be negative.</small>
+                  }
+                </label>
+              </div>
+            </fieldset>
+          } @empty {
+            <div class="empty-list">
+              <span class="empty-list-icon" aria-hidden="true">＋</span>
+              <p>No packages added yet.</p>
+              <button class="text-button" type="button" (click)="addPackage()">
+                Add your first package
+              </button>
+            </div>
+          }
+        </div>
+
+        <div class="form-footer">
+          <p class="form-note">
+            <span class="required-mark">*</span>
+            Dimensions must be positive. Weight is in catalogue units.
+          </p>
+          <button
+            class="calculate-button"
+            type="submit"
+            [disabled]="isSubmitting() || apiToken.invalid || packageForm.invalid"
+          >
+            @if (isSubmitting()) {
+              <span class="spinner" aria-hidden="true"></span>
+              Calculating
+            } @else {
+              Calculate boxes
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M4 10h12m-5-5 5 5-5 5" />
+              </svg>
+            }
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel result-panel" aria-labelledby="result-heading">
+      <div class="result-panel-top">
+        <div>
+          <p class="section-kicker">PACKING SUMMARY</p>
+          <h2 id="result-heading">The result</h2>
+        </div>
+        <span class="result-spark" aria-hidden="true">✳</span>
+      </div>
+
+      <div class="result-display" aria-live="polite">
+        @if (result() !== null) {
+          <div class="result-number">{{ result() }}</div>
+          <p class="result-unit">{{ result() === 1 ? 'box' : 'boxes' }} needed</p>
+          <p class="result-caption">Your packages are ready for the next step.</p>
+        } @else {
+          <div class="result-placeholder" aria-hidden="true">
+            <svg viewBox="0 0 112 112" fill="none">
+              <path d="m56 11 41 22.5v45L56 101 15 78.5v-45L56 11Z" />
+              <path d="m16 34 40 22 40-22M56 56v44" />
+              <path d="M40 23 80 45M73 19l17 9" />
+            </svg>
+          </div>
+          <p class="result-unit">Your box count<br />will appear here</p>
+          <p class="result-caption">Add your API token, then run the calculation.</p>
+        }
+      </div>
+
+      @if (errorMessage()) {
+        <div class="error-banner" role="alert">
+          <span class="error-icon" aria-hidden="true">!</span>
+          <span>{{ errorMessage() }}</span>
+        </div>
+      }
+
+      <div class="catalogue-card">
+        <div class="catalogue-heading">
+          <span>AVAILABLE BOX</span>
+          <span class="catalogue-tag">TYPE C</span>
+        </div>
+        <div class="catalogue-dimensions">
+          <span>300 <small>W</small></span>
+          <span class="dimension-separator">×</span>
+          <span>400 <small>H</small></span>
+          <span class="dimension-separator">×</span>
+          <span>300 <small>L</small></span>
+        </div>
+        <div class="catalogue-footer">
+          <span>MAX WEIGHT</span>
+          <strong>3,000 <small>units</small></strong>
+        </div>
+      </div>
+
+      <div class="result-footnote">
+        <span class="footnote-mark">i</span>
+        <p>Packages may be rotated. The result respects physical placement and weight limits.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="page-footer">
+    <span>PACKWELL <span class="footer-dot">•</span> SHIPPING TOOLS</span>
+    <span>BUILT FOR BETTER FITS</span>
+  </footer>
+</main>
