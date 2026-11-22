@@ -125,7 +125,7 @@ describe('App', () => {
     ).toBeNull();
   });
 
-  it('submits contact details and the order for special handling', () => {
+  it('automatically submits the current shipment when its order note is valid', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     app.auth.accessToken.set('signed-test-token');
@@ -150,11 +150,14 @@ describe('App', () => {
       ],
     });
 
-    app.assistanceForm.controls.contactName.setValue('Alex Customer');
-    app.assistanceForm.controls.contactEmail.setValue('alex@example.com');
-    app.assistanceForm.controls.contactPhone.setValue('+1 555-0100');
+    fixture.detectChanges();
+    const assistanceForm =
+      fixture.nativeElement.querySelector('.assistance-form');
+    expect(assistanceForm.querySelector('input')).toBeNull();
+    expect(assistanceForm.querySelectorAll('textarea').length).toBe(1);
+    expect(app.assistanceForm.invalid).toBe(true);
+
     app.assistanceForm.controls.notes.setValue('Glass item');
-    app.requestAssistance();
 
     const request = httpTestingController.expectOne(
       '/api/v1/assistance-requests',
@@ -163,9 +166,6 @@ describe('App', () => {
       'Bearer signed-test-token',
     );
     expect(request.request.body).toEqual({
-      contact_name: 'Alex Customer',
-      contact_email: 'alex@example.com',
-      contact_phone: '+1 555-0100',
       notes: 'Glass item',
       packages: [
         {

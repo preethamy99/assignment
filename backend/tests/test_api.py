@@ -217,11 +217,8 @@ class PackingApiTests(unittest.TestCase):
             ["fragile"],
         )
 
-    def test_assistance_request_is_saved_with_contact_and_order_details(self) -> None:
+    def test_assistance_request_is_saved_with_note_and_order_details(self) -> None:
         payload = {
-            "contact_name": "Alex Customer",
-            "contact_email": "alex@example.com",
-            "contact_phone": "+1 555-0100",
             "notes": "Please handle the glass item carefully.",
             "packages": [
                 {"id": 1, "width": 10, "height": 10, "length": 10, "weight": 5},
@@ -255,9 +252,9 @@ class PackingApiTests(unittest.TestCase):
         self.assertEqual(len(review.json()), 1)
         record = review.json()[0]
         self.assertEqual(record["request_id"], receipt["request_id"])
-        self.assertEqual(record["contact_name"], "Alex Customer")
-        self.assertEqual(record["contact_email"], "alex@example.com")
-        self.assertEqual(record["contact_phone"], "+1 555-0100")
+        self.assertIsNone(record["contact_name"])
+        self.assertEqual(record["contact_email"], "test@example.com")
+        self.assertIsNone(record["contact_phone"])
         self.assertEqual(record["notes"], payload["notes"])
         self.assertEqual(record["box_count"], 1)
         self.assertEqual(record["boxes"][0]["packages"][0]["id"], 1)
@@ -276,7 +273,7 @@ class PackingApiTests(unittest.TestCase):
         )
         self.assertEqual(export.status_code, 200)
         self.assertIn("attachment; filename=", export.headers["content-disposition"])
-        self.assertIn("alex@example.com", export.text)
+        self.assertIn("test@example.com", export.text)
         self.assertIn("assistance required", export.text)
         self.assertIn("overweight", export.text)
 
@@ -285,9 +282,7 @@ class PackingApiTests(unittest.TestCase):
             "/api/v1/assistance-requests",
             headers=self.auth_headers,
             json={
-                "contact_name": "Alex Customer",
-                "contact_email": "alex@example.com",
-                "contact_phone": "+1 555-0100",
+                "notes": "No special items in this shipment.",
                 "packages": [
                     {
                         "id": 1,
@@ -305,15 +300,12 @@ class PackingApiTests(unittest.TestCase):
             "This order has no items requiring special handling.",
         )
 
-    def test_assistance_request_validation_does_not_echo_contact_data(self) -> None:
-        phone = "x" * 40
+    def test_assistance_request_requires_a_nonblank_order_note(self) -> None:
         response = self.client.post(
             "/api/v1/assistance-requests",
             headers=self.auth_headers,
             json={
-                "contact_name": "Alex Customer",
-                "contact_email": "alex@example.com",
-                "contact_phone": phone,
+                "notes": "   ",
                 "packages": [
                     {
                         "id": 1,
@@ -327,7 +319,29 @@ class PackingApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 422)
-        self.assertNotIn(phone, response.text)
+
+    def test_assistance_request_rejects_contact_fields_in_the_payload(self) -> None:
+        email = "private@example.com"
+        response = self.client.post(
+            "/api/v1/assistance-requests",
+            headers=self.auth_headers,
+            json={
+                "contact_email": email,
+                "notes": "Please review this fragile item.",
+                "packages": [
+                    {
+                        "id": 1,
+                        "width": 10,
+                        "height": 10,
+                        "length": 10,
+                        "weight": 5,
+                        "fragile": True,
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn(email, response.text)
 
     def test_assistance_request_endpoints_require_jwt(self) -> None:
         review = self.client.get("/api/v1/assistance-requests")

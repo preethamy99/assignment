@@ -1,7 +1,6 @@
 import csv
 import io
 import json
-import re
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
@@ -140,41 +139,18 @@ class PackingResult(BaseModel):
 
 
 class AssistanceRequestSubmission(BaseModel):
-    contact_name: str = Field(min_length=1, max_length=150)
-    contact_email: str = Field(min_length=3, max_length=254)
-    contact_phone: str = Field(min_length=7, max_length=32)
-    notes: str | None = Field(default=None, max_length=1000)
+    model_config = ConfigDict(extra="forbid")
+
+    notes: str = Field(min_length=1, max_length=1000)
     packages: list[PackageInput] = Field(min_length=1, max_length=500)
-
-    @field_validator("contact_name", "contact_email", "contact_phone")
-    @classmethod
-    def strip_contact_fields(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("This contact field is required.")
-        return normalized
-
-    @field_validator("contact_email")
-    @classmethod
-    def validate_contact_email(cls, value: str) -> str:
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
-            raise ValueError("Enter a valid contact email.")
-        return value.lower()
-
-    @field_validator("contact_phone")
-    @classmethod
-    def validate_contact_phone(cls, value: str) -> str:
-        if not re.fullmatch(r"[+()\d .-]{7,32}", value) or not any(
-            character.isdigit() for character in value
-        ):
-            raise ValueError("Enter a valid contact phone number.")
-        return value
 
     @field_validator("notes")
     @classmethod
-    def normalize_notes(cls, value: str | None) -> str | None:
-        normalized = value.strip() if value is not None else None
-        return normalized or None
+    def normalize_notes(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("An order note is required.")
+        return normalized
 
 
 class AssistanceRequestReceipt(BaseModel):
@@ -184,9 +160,9 @@ class AssistanceRequestReceipt(BaseModel):
 
 
 class AssistanceRequestRecord(AssistanceRequestReceipt):
-    contact_name: str
-    contact_email: str
-    contact_phone: str
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     notes: str | None
     box_count: int
     boxes: list[BoxAssignment]
@@ -265,14 +241,16 @@ def calculate_boxes(
     tags=["assistance"],
     summary="Submit an assistance request",
     description=(
-        "Save customer contact details and a backend-calculated snapshot of "
-        "the order for fragile, overweight, or oversized packages."
+        "Save a required order note and a backend-calculated snapshot for "
+        "fragile, overweight, or oversized packages. The authenticated account "
+        "email is recorded automatically."
     ),
     responses={
         401: {"description": "A valid JWT bearer token is required."},
         422: {
             "description": (
-                "Invalid contact or package data, or no item requires assistance."
+                "A required order note or package data is invalid, or no item "
+                "requires assistance."
             )
         },
         503: {"description": "JWT signing is not securely configured."},
@@ -293,7 +271,9 @@ def submit_assistance_request(
 
     request_id = str(uuid4())
     submitted_at = datetime.now(timezone.utc).isoformat()
-    record = _to_assistance_record(request_id, submitted_at, submission, plan)
+    record = _to_assistance_record(
+        request_id, submitted_at, _user, submission, plan
+    )
     save_request(request_id, submitted_at, record.model_dump_json())
     return AssistanceRequestReceipt(
         request_id=request_id,
@@ -415,6 +395,7 @@ def _to_packing_result(plan: PackingPlan) -> PackingResult:
 def _to_assistance_record(
     request_id: str,
     submitted_at: str,
+    submitted_by: str,
     submission: AssistanceRequestSubmission,
     plan: PackingPlan,
 ) -> AssistanceRequestRecord:
@@ -422,9 +403,7 @@ def _to_assistance_record(
         request_id=request_id,
         submitted_at=submitted_at,
         status="submitted",
-        contact_name=submission.contact_name,
-        contact_email=submission.contact_email,
-        contact_phone=submission.contact_phone,
+        contact_email=submitted_by,
         notes=submission.notes,
         box_count=len(plan.boxes),
         boxes=[_to_box_assignment(box) for box in plan.boxes],
@@ -484,9 +463,9 @@ def _assistance_csv_row(
     return [
         record.request_id,
         record.submitted_at,
-        record.contact_name,
-        record.contact_email,
-        record.contact_phone,
+        record.contact_name or "",
+        record.contact_email or "",
+        record.contact_phone or "",
         record.notes or "",
         item_status,
         box_number,

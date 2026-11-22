@@ -38,9 +38,6 @@ export interface PackingResponse {
 }
 
 export interface AssistanceRequestInput {
-  contact_name: string;
-  contact_email: string;
-  contact_phone: string;
   notes: string;
   packages: PackageInput[];
 }

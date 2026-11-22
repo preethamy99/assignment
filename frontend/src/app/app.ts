@@ -85,24 +85,14 @@ export class App {
     }),
   });
   readonly assistanceForm = new FormGroup({
-    contactName: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, nonWhitespaceValidator],
-    }),
-    contactEmail: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.email],
-    }),
-    contactPhone: new FormControl('', {
+    notes: new FormControl('', {
       nonNullable: true,
       validators: [
         Validators.required,
-        Validators.minLength(7),
-        Validators.maxLength(32),
-        Validators.pattern(/^(?=.*\d)[+()\d .-]+$/),
+        Validators.maxLength(1000),
+        nonWhitespaceValidator,
       ],
     }),
-    notes: new FormControl('', { nonNullable: true }),
   });
   readonly isLoggingIn = signal(false);
   readonly isSubmitting = signal(false);
@@ -136,6 +126,9 @@ export class App {
       fragile: false,
     });
     this.packageForm.valueChanges.subscribe(() => this.clearResult());
+    this.assistanceForm.valueChanges.subscribe(() =>
+      this.trySubmitAssistanceWhenReady(),
+    );
   }
 
   get canAddPackage(): boolean {
@@ -280,7 +273,9 @@ export class App {
         this.result.set(response.box_count);
         this.boxes.set(response.boxes);
         this.specialItems.set(response.special_items);
+        this.isAssistanceFormOpen.set(response.special_items.length > 0);
         this.isSubmitting.set(false);
+        this.trySubmitAssistanceWhenReady();
       },
       error: (error: unknown) => {
         this.errorMessage.set(this.describeError(error, false));
@@ -292,13 +287,12 @@ export class App {
     });
   }
 
-  toggleAssistanceForm(): void {
-    this.assistanceErrorMessage.set('');
-    this.isAssistanceFormOpen.update((isOpen) => !isOpen);
-  }
-
   requestAssistance(): void {
-    if (this.specialItems().length === 0) {
+    if (
+      this.specialItems().length === 0 ||
+      this.isSubmittingAssistance() ||
+      this.assistanceReceipt()
+    ) {
       return;
     }
 
@@ -309,12 +303,8 @@ export class App {
 
     this.isSubmittingAssistance.set(true);
     this.assistanceErrorMessage.set('');
-    const contact = this.assistanceForm.getRawValue();
     const request: AssistanceRequestInput = {
-      contact_name: contact.contactName.trim(),
-      contact_email: contact.contactEmail.trim(),
-      contact_phone: contact.contactPhone.trim(),
-      notes: contact.notes.trim(),
+      notes: this.assistanceForm.controls.notes.value.trim(),
       packages: this.packages.controls.map((row) => row.getRawValue()),
     };
 
@@ -322,6 +312,7 @@ export class App {
       next: (receipt) => {
         this.assistanceReceipt.set(receipt);
         this.isAssistanceFormOpen.set(false);
+        this.assistanceForm.reset();
         this.isSubmittingAssistance.set(false);
       },
       error: (error: unknown) => {
@@ -334,6 +325,19 @@ export class App {
         this.isSubmittingAssistance.set(false);
       },
     });
+  }
+
+  private trySubmitAssistanceWhenReady(): void {
+    if (
+      this.specialItems().length > 0 &&
+      this.isAssistanceFormOpen() &&
+      this.assistanceForm.valid &&
+      !this.assistanceErrorMessage() &&
+      !this.isSubmittingAssistance() &&
+      !this.assistanceReceipt()
+    ) {
+      this.requestAssistance();
+    }
   }
 
   describeSpecialReason(reason: SpecialHandlingReason): string {
@@ -407,6 +411,7 @@ export class App {
     this.isAssistanceFormOpen.set(false);
     this.errorMessage.set('');
     this.assistanceErrorMessage.set('');
+    this.assistanceForm.reset();
   }
 
   private clearImportMessages(): void {

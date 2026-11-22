@@ -420,69 +420,55 @@
 
           @if (assistanceReceipt(); as receipt) {
             <p class="assistance-success" role="status">
-              Request submitted. Our team will contact you.
+              Assistance request attached to this shipment. Our team will
+              review it and arrange the next steps.
               Reference: {{ receipt.request_id }}
             </p>
           } @else if (isAssistanceFormOpen()) {
             <form
               class="assistance-form"
               [formGroup]="assistanceForm"
-              (ngSubmit)="requestAssistance()"
             >
               <p class="assistance-form-intro">
-                Add your contact details so our team can follow up about this order.
+                This request automatically includes the current shipment's
+                packages and box assignments. Add an order note to send it.
               </p>
               <label class="field">
-                <span>Name</span>
-                <input type="text" autocomplete="name" formControlName="contactName" />
-                @if (assistanceForm.controls.contactName.touched && assistanceForm.controls.contactName.invalid) {
-                  <small class="field-error">Enter your name.</small>
+                <span>Order note <small>required</small></span>
+                <textarea
+                  rows="3"
+                  maxlength="1000"
+                  required
+                  formControlName="notes"
+                  [disabled]="isSubmittingAssistance()"
+                  aria-describedby="assistance-note-hint"
+                ></textarea>
+                <small id="assistance-note-hint">
+                  The request sends automatically when you add a note.
+                </small>
+                @if (assistanceForm.controls.notes.touched && assistanceForm.controls.notes.invalid) {
+                  <small class="field-error">Enter an order note.</small>
                 }
               </label>
-              <label class="field">
-                <span>Email</span>
-                <input type="email" autocomplete="email" formControlName="contactEmail" />
-                @if (assistanceForm.controls.contactEmail.touched && assistanceForm.controls.contactEmail.invalid) {
-                  <small class="field-error">Enter a valid email address.</small>
-                }
-              </label>
-              <label class="field">
-                <span>Phone</span>
-                <input type="tel" autocomplete="tel" formControlName="contactPhone" />
-                @if (assistanceForm.controls.contactPhone.touched && assistanceForm.controls.contactPhone.invalid) {
-                  <small class="field-error">Enter a valid phone number.</small>
-                }
-              </label>
-              <label class="field">
-                <span>Order note <small>optional</small></span>
-                <textarea rows="3" formControlName="notes"></textarea>
-              </label>
+              @if (isSubmittingAssistance()) {
+                <p class="assistance-form-intro" role="status">
+                  Sending the assistance request…
+                </p>
+              }
               @if (assistanceErrorMessage()) {
                 <p class="import-feedback import-failure" role="alert">
                   {{ assistanceErrorMessage() }}
                 </p>
+                <button
+                  class="calculate-button assistance-submit"
+                  type="button"
+                  [disabled]="isSubmittingAssistance()"
+                  (click)="requestAssistance()"
+                >
+                  Retry request
+                </button>
               }
-              <button
-                class="calculate-button assistance-submit"
-                type="submit"
-                [disabled]="isSubmittingAssistance()"
-              >
-                @if (isSubmittingAssistance()) {
-                  <span class="spinner" aria-hidden="true"></span>
-                  Sending request
-                } @else {
-                  Submit request
-                }
-              </button>
             </form>
-          } @else {
-            <button
-              class="calculate-button assistance-request-button"
-              type="button"
-              (click)="toggleAssistanceForm()"
-            >
-              Raise an assistance request
-            </button>
           }
         </section>
       }
