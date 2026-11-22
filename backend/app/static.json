@@ -1,0 +1,9 @@
+{
+  "users": [
+    {
+      "email": "test@example.com",
+      "password_salt": "572b644175a147967d43fbef7418da19",
+      "password_hash": "7f7f589affea9f9be05cb97f15cd83718b2d0131decf754267443c78a0b5418b"
+    }
+  ]
+}

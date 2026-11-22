@@ -1,19 +1,84 @@
+import json
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.auth import USER_STORE_PATH
 from app.main import app
 
 
 class PackingApiTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.environment = patch.dict(os.environ, {"API_AUTH_TOKEN": "test-secret"})
+        self.environment = patch.dict(
+            os.environ,
+            {"JWT_SECRET_KEY": "test-signing-key-that-is-at-least-32-bytes"},
+        )
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.client = TestClient(app)
-        self.auth_headers = {"Authorization": "Bearer test-secret"}
+        self._auth_headers: dict[str, str] | None = None
+
+    @property
+    def auth_headers(self) -> dict[str, str]:
+        if self._auth_headers is None:
+            response = self.client.post(
+                "/api/v1/auth/token",
+                json={"email": "test@example.com", "password": "1234567890"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self._auth_headers = {
+                "Authorization": f"Bearer {response.json()['access_token']}"
+            }
+        return self._auth_headers
+
+    def test_login_returns_jwt_for_valid_credentials(self) -> None:
+        # The demo credentials produce a signed JWT for use by protected endpoints.
+        response = self.client.post(
+            "/api/v1/auth/token",
+            json={"email": "test@example.com", "password": "1234567890"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["token_type"], "bearer")
+        self.assertTrue(response.json()["access_token"])
+
+    def test_login_rejects_incorrect_password(self) -> None:
+        # Incorrect credentials must not issue an access token.
+        response = self.client.post(
+            "/api/v1/auth/token",
+            json={"email": "test@example.com", "password": "wrong-password"},
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_validation_does_not_echo_password(self) -> None:
+        # Validation errors must not include submitted credentials in responses.
+        password = "x" * 129
+        response = self.client.post(
+            "/api/v1/auth/token",
+            json={"email": "test@example.com", "password": password},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn(password, response.text)
+
+    def test_demo_password_is_stored_only_as_a_hash(self) -> None:
+        # The static user file must not contain the demo password in plain text.
+        user = json.loads(Path(USER_STORE_PATH).read_text(encoding="utf-8"))["users"][0]
+        self.assertNotIn("1234567890", json.dumps(user))
+        self.assertEqual(len(user["password_hash"]), 64)
+
+    def test_openapi_documents_login_and_bearer_protected_packing(self) -> None:
+        # Swagger's schema should expose both requests and packing authorization.
+        openapi = self.client.get("/openapi.json").json()
+        paths = openapi["paths"]
+        self.assertIn("/api/v1/auth/token", paths)
+        self.assertIn("/api/v1/pack", paths)
+        self.assertEqual(
+            paths["/api/v1/pack"]["post"]["security"],
+            [{"HTTPBearer": []}],
+        )
+        self.assertIn("HTTPBearer", openapi["components"]["securitySchemes"])
 
     def test_post_returns_box_count(self) -> None:
         # These two packages should share one box.
@@ -57,26 +122,26 @@ class PackingApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"]["package_id"], 9)
 
     def test_missing_token_returns_401(self) -> None:
-        # The endpoint must reject requests without bearer credentials.
+        # Protected endpoints reject requests without a JWT.
         response = self.client.post("/api/v1/pack", json=[])
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers["www-authenticate"], "Bearer")
 
     def test_invalid_token_returns_401(self) -> None:
-        # A well-formed but incorrect bearer token must not grant access.
+        # Arbitrary bearer values are not accepted as signed JWTs.
         response = self.client.post(
             "/api/v1/pack",
-            headers={"Authorization": "Bearer wrong-secret"},
+            headers={"Authorization": "Bearer not-a-jwt"},
             json=[],
         )
         self.assertEqual(response.status_code, 401)
 
-    def test_missing_server_token_configuration_returns_503(self) -> None:
-        # An unset server secret must fail closed rather than allow access.
-        del os.environ["API_AUTH_TOKEN"]
+    def test_missing_signing_secret_returns_503(self) -> None:
+        # The service must not issue or verify tokens without a strong signing key.
+        del os.environ["JWT_SECRET_KEY"]
         response = self.client.post(
             "/api/v1/pack",
-            headers=self.auth_headers,
+            headers={"Authorization": "Bearer arbitrary"},
             json=[],
         )
         self.assertEqual(response.status_code, 503)
