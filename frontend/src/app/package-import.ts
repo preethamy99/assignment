@@ -34,6 +34,13 @@ export function parsePackageRows(rows: unknown[][]): PackageInput[] {
     }
     return matches[0];
   });
+  const fragileColumns = header
+    .map((cell, index) => (cell === 'fragile' ? index : -1))
+    .filter((index) => index >= 0);
+  if (fragileColumns.length > 1) {
+    throw new PackageImportError('Duplicate column: fragile.');
+  }
+  const fragileColumn = fragileColumns[0];
 
   const packages: PackageInput[] = [];
   for (let index = headerRowIndex + 1; index < rows.length; index += 1) {
@@ -58,8 +65,12 @@ export function parsePackageRows(rows: unknown[][]): PackageInput[] {
     if (weight < 0) {
       throw new PackageImportError(`Row ${rowNumber}: weight cannot be negative.`);
     }
+    const fragile =
+      fragileColumn === undefined
+        ? false
+        : parseFragile(row[fragileColumn], rowNumber);
 
-    packages.push({ id, width, height, length, weight });
+    packages.push({ id, width, height, length, weight, fragile });
     if (packages.length > MAX_PACKAGES) {
       throw new PackageImportError(
         `A file can contain at most ${MAX_PACKAGES} packages.`,
@@ -119,4 +130,31 @@ function parseNumber(value: unknown, column: string, rowNumber: number): number 
     );
   }
   return parsed;
+}
+
+function parseFragile(value: unknown, rowNumber: number): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (value === 1 || value === 0) {
+    return value === 1;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (['true', 'yes', 'y', '1', 'fragile', 'glass'].includes(normalized)) {
+      return true;
+    }
+    if (['false', 'no', 'n', '0'].includes(normalized)) {
+      return false;
+    }
+  }
+  throw new PackageImportError(
+    `Row ${rowNumber}: fragile must be true or false.`,
+  );
 }

@@ -666,6 +666,24 @@
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
+.fragile-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.fragile-toggle input {
+  accent-color: var(--moss);
+}
+
+.fragile-toggle small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .field input::-webkit-inner-spin-button,
 .field input::-webkit-outer-spin-button {
   margin: 0;
@@ -788,6 +806,72 @@
   display: block;
   color: var(--muted);
   font-size: 8px;
+}
+
+.assistance-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.assistance-section .package-list-heading {
+  margin-top: 0;
+}
+
+.assistance-description,
+.assistance-form-intro {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.assistance-description {
+  margin: 0 0 10px;
+}
+
+.special-reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #ad5144;
+  font-size: 9px;
+}
+
+.assistance-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.assistance-form-intro {
+  margin: 0;
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  resize: vertical;
+}
+
+.assistance-submit,
+.assistance-request-button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.assistance-success {
+  padding: 10px;
+  border-radius: 6px;
+  background: #eff2eb;
+  color: var(--moss);
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .result-panel {

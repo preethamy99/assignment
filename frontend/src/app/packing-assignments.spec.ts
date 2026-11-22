@@ -13,17 +13,31 @@ describe('buildAssignmentsCsv', () => {
         max_weight: 1000,
         total_weight: 15,
         packages: [
-          { id: 123, width: 10, height: 10, length: 10, weight: 5 },
-          { id: 125, width: 5, height: 5, length: 10, weight: 10 },
+          {
+            id: 123,
+            width: 10,
+            height: 10,
+            length: 10,
+            weight: 5,
+            fragile: false,
+          },
+          {
+            id: 125,
+            width: 5,
+            height: 5,
+            length: 10,
+            weight: 10,
+            fragile: false,
+          },
         ],
       },
     ];
 
     expect(buildAssignmentsCsv(boxes)).toBe(
       [
-        'box_number,box_type,box_width,box_height,box_length,box_max_weight,box_total_weight,package_id,package_width,package_height,package_length,package_weight',
-        '1,B,100,200,100,1000,15,123,10,10,10,5',
-        '1,B,100,200,100,1000,15,125,5,5,10,10',
+        'box_number,box_type,box_width,box_height,box_length,box_max_weight,box_total_weight,package_id,package_fragile,package_width,package_height,package_length,package_weight',
+        '1,B,100,200,100,1000,15,123,false,10,10,10,5',
+        '1,B,100,200,100,1000,15,125,false,5,5,10,10',
       ].join('\r\n'),
     );
   });

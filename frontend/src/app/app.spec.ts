@@ -60,8 +60,22 @@ describe('App', () => {
       'Bearer signed-test-token',
     );
     expect(request.request.body).toEqual([
-      { id: 123, width: 10, height: 10, length: 10, weight: 5 },
-      { id: 125, width: 5, height: 5, length: 10, weight: 10 },
+      {
+        id: 123,
+        width: 10,
+        height: 10,
+        length: 10,
+        weight: 5,
+        fragile: false,
+      },
+      {
+        id: 125,
+        width: 5,
+        height: 5,
+        length: 10,
+        weight: 10,
+        fragile: false,
+      },
     ]);
 
     request.flush({
@@ -76,11 +90,27 @@ describe('App', () => {
           max_weight: 1000,
           total_weight: 15,
           packages: [
-            { id: 123, width: 10, height: 10, length: 10, weight: 5 },
-            { id: 125, width: 5, height: 5, length: 10, weight: 10 },
+            {
+              id: 123,
+              width: 10,
+              height: 10,
+              length: 10,
+              weight: 5,
+              fragile: false,
+            },
+            {
+              id: 125,
+              width: 5,
+              height: 5,
+              length: 10,
+              weight: 10,
+              fragile: false,
+            },
           ],
         },
       ],
+      special_handling_required: false,
+      special_items: [],
     });
     expect(app.result()).toBe(1);
     expect(app.boxes()[0].box_type).toBe('B');
@@ -93,6 +123,75 @@ describe('App', () => {
     expect(
       fixture.nativeElement.querySelector('.input-panel #assignment-heading'),
     ).toBeNull();
+  });
+
+  it('submits contact details and the order for special handling', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.auth.accessToken.set('signed-test-token');
+    app.auth.isAuthenticated.set(true);
+    app.packages.at(0).controls.fragile.setValue(true);
+    app.calculateBoxes();
+
+    httpTestingController.expectOne('/api/v1/pack').flush({
+      box_count: 0,
+      boxes: [],
+      special_handling_required: true,
+      special_items: [
+        {
+          id: 123,
+          width: 10,
+          height: 10,
+          length: 10,
+          weight: 5,
+          fragile: true,
+          reasons: ['fragile'],
+        },
+      ],
+    });
+
+    app.assistanceForm.controls.contactName.setValue('Alex Customer');
+    app.assistanceForm.controls.contactEmail.setValue('alex@example.com');
+    app.assistanceForm.controls.contactPhone.setValue('+1 555-0100');
+    app.assistanceForm.controls.notes.setValue('Glass item');
+    app.requestAssistance();
+
+    const request = httpTestingController.expectOne(
+      '/api/v1/assistance-requests',
+    );
+    expect(request.request.headers.get('Authorization')).toBe(
+      'Bearer signed-test-token',
+    );
+    expect(request.request.body).toEqual({
+      contact_name: 'Alex Customer',
+      contact_email: 'alex@example.com',
+      contact_phone: '+1 555-0100',
+      notes: 'Glass item',
+      packages: [
+        {
+          id: 123,
+          width: 10,
+          height: 10,
+          length: 10,
+          weight: 5,
+          fragile: true,
+        },
+        {
+          id: 125,
+          width: 5,
+          height: 5,
+          length: 10,
+          weight: 10,
+          fragile: false,
+        },
+      ],
+    });
+    request.flush({
+      request_id: 'request-reference',
+      submitted_at: '2026-11-22T00:00:00Z',
+      status: 'submitted',
+    });
+    expect(app.assistanceReceipt()?.request_id).toBe('request-reference');
   });
 
   it('shows an authentication error when login credentials are rejected', () => {

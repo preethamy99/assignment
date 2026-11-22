@@ -125,7 +125,7 @@
           <button
             class="add-button"
             type="button"
-            [disabled]="!canAddPackage || isSubmitting() || isImporting()"
+            [disabled]="!canAddPackage || isSubmitting() || isImporting() || isSubmittingAssistance()"
             (click)="addPackage()"
           >
             <span aria-hidden="true">+</span> Add package
@@ -158,7 +158,8 @@
           </label>
         </div>
         <p class="import-hint">
-          Required headers: id, width, height, length, weight. First worksheet is used.
+          Required headers: id, width, height, length, weight. Optional: fragile
+          (true/false). First worksheet is used.
           Up to 500 packages total; imports are appended.
           <a href="package-template.csv" download>Download CSV template</a>
           ·
@@ -180,7 +181,7 @@
             <fieldset
               class="package-card"
               [formGroupName]="index"
-              [disabled]="isSubmitting() || isImporting()"
+              [disabled]="isSubmitting() || isImporting() || isSubmittingAssistance()"
             >
               <div class="package-card-top">
                 <div class="package-index">
@@ -266,6 +267,11 @@
                   }
                 </label>
               </div>
+              <label class="fragile-toggle">
+                <input type="checkbox" formControlName="fragile" />
+                <span>Fragile or glass item</span>
+                <small>Needs special handling</small>
+              </label>
             </fieldset>
           } @empty {
             <div class="empty-list">
@@ -286,7 +292,7 @@
           <button
             class="calculate-button"
             type="submit"
-            [disabled]="isSubmitting() || isImporting() || packageForm.invalid"
+            [disabled]="isSubmitting() || isImporting() || isSubmittingAssistance() || packageForm.invalid"
           >
             @if (isSubmitting()) {
               <span class="spinner" aria-hidden="true"></span>
@@ -306,7 +312,7 @@
 
     <aside
       class="panel result-panel"
-      [class.result-panel-expanded]="boxes().length > 0"
+      [class.result-panel-expanded]="boxes().length > 0 || specialItems().length > 0"
       aria-labelledby="result-heading"
     >
       <div class="result-panel-top">
@@ -321,7 +327,13 @@
         @if (result() !== null) {
           <div class="result-number">{{ result() }}</div>
           <p class="result-unit">{{ result() === 1 ? 'box' : 'boxes' }} needed</p>
-          <p class="result-caption">Your packages are ready for the next step.</p>
+          <p class="result-caption">
+            @if (specialItems().length > 0) {
+              Some items need special handling before shipping.
+            } @else {
+              Your packages are ready for the next step.
+            }
+          </p>
         } @else {
           <div class="result-placeholder" aria-hidden="true">
             <svg viewBox="0 0 112 112" fill="none">
@@ -375,6 +387,103 @@
               </article>
             }
           </div>
+        </section>
+      }
+
+      @if (specialItems().length > 0) {
+        <section class="assistance-section" aria-labelledby="assistance-heading">
+          <div class="package-list-heading">
+            <span class="list-title" id="assistance-heading">Further assistance</span>
+          </div>
+          <p class="assistance-description">
+            These items need custom packaging review and are not included in the box plan.
+          </p>
+          <div class="package-list">
+            @for (item of specialItems(); track $index) {
+              <article class="package-card special-item-card">
+                <div class="package-card-top">
+                  <strong>Package #{{ item.id }}</strong>
+                  <span class="catalogue-tag">Review needed</span>
+                </div>
+                <p class="form-note">
+                  {{ item.width }} × {{ item.height }} × {{ item.length }} units
+                  · {{ item.weight }} weight
+                </p>
+                <ul class="special-reasons">
+                  @for (reason of item.reasons; track reason) {
+                    <li>{{ describeSpecialReason(reason) }}</li>
+                  }
+                </ul>
+              </article>
+            }
+          </div>
+
+          @if (assistanceReceipt(); as receipt) {
+            <p class="assistance-success" role="status">
+              Request submitted. Our team will contact you.
+              Reference: {{ receipt.request_id }}
+            </p>
+          } @else if (isAssistanceFormOpen()) {
+            <form
+              class="assistance-form"
+              [formGroup]="assistanceForm"
+              (ngSubmit)="requestAssistance()"
+            >
+              <p class="assistance-form-intro">
+                Add your contact details so our team can follow up about this order.
+              </p>
+              <label class="field">
+                <span>Name</span>
+                <input type="text" autocomplete="name" formControlName="contactName" />
+                @if (assistanceForm.controls.contactName.touched && assistanceForm.controls.contactName.invalid) {
+                  <small class="field-error">Enter your name.</small>
+                }
+              </label>
+              <label class="field">
+                <span>Email</span>
+                <input type="email" autocomplete="email" formControlName="contactEmail" />
+                @if (assistanceForm.controls.contactEmail.touched && assistanceForm.controls.contactEmail.invalid) {
+                  <small class="field-error">Enter a valid email address.</small>
+                }
+              </label>
+              <label class="field">
+                <span>Phone</span>
+                <input type="tel" autocomplete="tel" formControlName="contactPhone" />
+                @if (assistanceForm.controls.contactPhone.touched && assistanceForm.controls.contactPhone.invalid) {
+                  <small class="field-error">Enter a valid phone number.</small>
+                }
+              </label>
+              <label class="field">
+                <span>Order note <small>optional</small></span>
+                <textarea rows="3" formControlName="notes"></textarea>
+              </label>
+              @if (assistanceErrorMessage()) {
+                <p class="import-feedback import-failure" role="alert">
+                  {{ assistanceErrorMessage() }}
+                </p>
+              }
+              <button
+                class="calculate-button assistance-submit"
+                type="submit"
+                [disabled]="isSubmittingAssistance()"
+              >
+                @if (isSubmittingAssistance()) {
+                  <span class="spinner" aria-hidden="true"></span>
+                  Sending request
+                } @else {
+                  Submit request
+                }
+              </button>
+            </form>
+          } @else {
+            <button
+              class="calculate-button assistance-request-button"
+              type="button"
+              (click)="toggleAssistanceForm()"
+            >
+              Raise an assistance request
+            </button>
+          }
         </section>
       }
 

@@ -22,7 +22,14 @@ import {
   PackageImportError,
   readPackagesFromFile,
 } from './package-import';
-import { PackedBox, PackageInput } from './package.model';
+import {
+  AssistanceRequestInput,
+  AssistanceRequestReceipt,
+  PackedBox,
+  PackageInput,
+  SpecialHandlingItem,
+  SpecialHandlingReason,
+} from './package.model';
 import { buildAssignmentsCsv } from './packing-assignments';
 import { PackingApiService } from './packing-api.service';
 
@@ -32,6 +39,7 @@ type PackageControls = {
   height: FormControl<number>;
   length: FormControl<number>;
   weight: FormControl<number>;
+  fragile: FormControl<boolean>;
 };
 
 type PackageRow = FormGroup<PackageControls>;
@@ -45,6 +53,13 @@ const positiveValidator: ValidatorFn = (
   control: AbstractControl,
 ): ValidationErrors | null =>
   Number(control.value) > 0 ? null : { positive: true };
+
+const nonWhitespaceValidator: ValidatorFn = (
+  control: AbstractControl,
+): ValidationErrors | null =>
+  typeof control.value === 'string' && control.value.trim().length > 0
+    ? null
+    : { whitespace: true };
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,18 +84,57 @@ export class App {
       validators: [Validators.required],
     }),
   });
+  readonly assistanceForm = new FormGroup({
+    contactName: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, nonWhitespaceValidator],
+    }),
+    contactEmail: new FormControl('', {
+      nonNullable: true,
+      validators: [Validators.required, Validators.email],
+    }),
+    contactPhone: new FormControl('', {
+      nonNullable: true,
+      validators: [
+        Validators.required,
+        Validators.minLength(7),
+        Validators.maxLength(32),
+        Validators.pattern(/^(?=.*\d)[+()\d .-]+$/),
+      ],
+    }),
+    notes: new FormControl('', { nonNullable: true }),
+  });
   readonly isLoggingIn = signal(false);
   readonly isSubmitting = signal(false);
+  readonly isSubmittingAssistance = signal(false);
   readonly isImporting = signal(false);
   readonly result = signal<number | null>(null);
   readonly boxes = signal<PackedBox[]>([]);
+  readonly specialItems = signal<SpecialHandlingItem[]>([]);
+  readonly isAssistanceFormOpen = signal(false);
+  readonly assistanceReceipt = signal<AssistanceRequestReceipt | null>(null);
   readonly errorMessage = signal('');
+  readonly assistanceErrorMessage = signal('');
   readonly importErrorMessage = signal('');
   readonly importSuccessMessage = signal('');
 
   constructor() {
-    this.addPackage({ id: 123, width: 10, height: 10, length: 10, weight: 5 });
-    this.addPackage({ id: 125, width: 5, height: 5, length: 10, weight: 10 });
+    this.addPackage({
+      id: 123,
+      width: 10,
+      height: 10,
+      length: 10,
+      weight: 5,
+      fragile: false,
+    });
+    this.addPackage({
+      id: 125,
+      width: 5,
+      height: 5,
+      length: 10,
+      weight: 10,
+      fragile: false,
+    });
     this.packageForm.valueChanges.subscribe(() => this.clearResult());
   }
 
@@ -89,7 +143,12 @@ export class App {
   }
 
   get canImportPackages(): boolean {
-    return this.canAddPackage && !this.isImporting() && !this.isSubmitting();
+    return (
+      this.canAddPackage &&
+      !this.isImporting() &&
+      !this.isSubmitting() &&
+      !this.isSubmittingAssistance()
+    );
   }
 
   addPackage(
@@ -99,6 +158,7 @@ export class App {
       height: 10,
       length: 10,
       weight: 5,
+      fragile: false,
     },
   ): void {
     if (!this.canAddPackage) {
@@ -190,6 +250,7 @@ export class App {
   logout(): void {
     this.auth.logout();
     this.clearResult();
+    this.assistanceForm.reset();
   }
 
   calculateBoxes(): void {
@@ -208,12 +269,17 @@ export class App {
     this.errorMessage.set('');
     this.result.set(null);
     this.boxes.set([]);
+    this.specialItems.set([]);
+    this.assistanceReceipt.set(null);
+    this.isAssistanceFormOpen.set(false);
+    this.assistanceErrorMessage.set('');
 
     const packages = this.packages.controls.map((row) => row.getRawValue());
     this.packingApi.calculate(packages).subscribe({
       next: (response) => {
         this.result.set(response.box_count);
         this.boxes.set(response.boxes);
+        this.specialItems.set(response.special_items);
         this.isSubmitting.set(false);
       },
       error: (error: unknown) => {
@@ -224,6 +290,61 @@ export class App {
         this.isSubmitting.set(false);
       },
     });
+  }
+
+  toggleAssistanceForm(): void {
+    this.assistanceErrorMessage.set('');
+    this.isAssistanceFormOpen.update((isOpen) => !isOpen);
+  }
+
+  requestAssistance(): void {
+    if (this.specialItems().length === 0) {
+      return;
+    }
+
+    this.assistanceForm.markAllAsTouched();
+    if (this.assistanceForm.invalid) {
+      return;
+    }
+
+    this.isSubmittingAssistance.set(true);
+    this.assistanceErrorMessage.set('');
+    const contact = this.assistanceForm.getRawValue();
+    const request: AssistanceRequestInput = {
+      contact_name: contact.contactName.trim(),
+      contact_email: contact.contactEmail.trim(),
+      contact_phone: contact.contactPhone.trim(),
+      notes: contact.notes.trim(),
+      packages: this.packages.controls.map((row) => row.getRawValue()),
+    };
+
+    this.packingApi.createAssistanceRequest(request).subscribe({
+      next: (receipt) => {
+        this.assistanceReceipt.set(receipt);
+        this.isAssistanceFormOpen.set(false);
+        this.isSubmittingAssistance.set(false);
+      },
+      error: (error: unknown) => {
+        this.assistanceErrorMessage.set(this.describeError(error, false));
+        if (error instanceof HttpErrorResponse && error.status === 401) {
+          this.auth.logout();
+          this.clearResult();
+          this.assistanceForm.reset();
+        }
+        this.isSubmittingAssistance.set(false);
+      },
+    });
+  }
+
+  describeSpecialReason(reason: SpecialHandlingReason): string {
+    switch (reason) {
+      case 'fragile':
+        return 'Fragile or glass item';
+      case 'oversized':
+        return 'Exceeds Box C dimensions';
+      case 'overweight':
+        return 'Exceeds Box C weight limit';
+    }
   }
 
   downloadAssignments(): void {
@@ -267,6 +388,7 @@ export class App {
         nonNullable: true,
         validators: [Validators.required, Validators.min(0)],
       }),
+      fragile: new FormControl(value.fragile ?? false, { nonNullable: true }),
     });
   }
 
@@ -280,7 +402,11 @@ export class App {
   private clearResult(): void {
     this.result.set(null);
     this.boxes.set([]);
+    this.specialItems.set([]);
+    this.assistanceReceipt.set(null);
+    this.isAssistanceFormOpen.set(false);
     this.errorMessage.set('');
+    this.assistanceErrorMessage.set('');
   }
 
   private clearImportMessages(): void {

@@ -16,8 +16,39 @@ describe('parsePackageRows', () => {
     ]);
 
     expect(packages).toEqual([
-      { id: 8, width: 10, height: 20, length: 30, weight: 0 },
+      {
+        id: 8,
+        width: 10,
+        height: 20,
+        length: 30,
+        weight: 0,
+        fragile: false,
+      },
     ]);
+  });
+
+  it('accepts a fragile column with common true/false values', () => {
+    expect(
+      parsePackageRows([
+        ['id', 'width', 'height', 'length', 'weight', 'fragile'],
+        [1, 10, 10, 10, 5, 'glass'],
+        [2, 10, 10, 10, 5, 'no'],
+        [3, 10, 10, 10, 5, '  '],
+      ]),
+    ).toEqual([
+      { id: 1, width: 10, height: 10, length: 10, weight: 5, fragile: true },
+      { id: 2, width: 10, height: 10, length: 10, weight: 5, fragile: false },
+      { id: 3, width: 10, height: 10, length: 10, weight: 5, fragile: false },
+    ]);
+  });
+
+  it('rejects invalid fragile column values', () => {
+    expect(() =>
+      parsePackageRows([
+        ['id', 'width', 'height', 'length', 'weight', 'fragile'],
+        [1, 10, 10, 10, 5, 'maybe'],
+      ]),
+    ).toThrow('Row 2: fragile must be true or false.');
   });
 
   it('rejects files that are missing a required column', () => {
@@ -70,7 +101,7 @@ describe('readPackagesFromFile', () => {
     );
 
     await expect(readPackagesFromFile(file)).resolves.toEqual([
-      { id: 7, width: 10, height: 20, length: 30, weight: 4 },
+      { id: 7, width: 10, height: 20, length: 30, weight: 4, fragile: false },
     ]);
   });
 
@@ -95,7 +126,14 @@ describe('readPackagesFromFile', () => {
     const file = new File([fileContents], `packages.${extension}`);
 
     await expect(readPackagesFromFile(file)).resolves.toEqual([
-      { id: 9, width: 15, height: 20, length: 25, weight: 30 },
+      {
+        id: 9,
+        width: 15,
+        height: 20,
+        length: 25,
+        weight: 30,
+        fragile: false,
+      },
     ]);
   });
 });

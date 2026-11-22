@@ -9,6 +9,7 @@ const CSV_HEADERS = [
   'box_max_weight',
   'box_total_weight',
   'package_id',
+  'package_fragile',
   'package_width',
   'package_height',
   'package_length',
@@ -26,6 +27,7 @@ export function buildAssignmentsCsv(boxes: PackedBox[]): string {
       box.max_weight,
       box.total_weight,
       item.id,
+      item.fragile,
       item.width,
       item.height,
       item.length,
@@ -35,7 +37,7 @@ export function buildAssignmentsCsv(boxes: PackedBox[]): string {
   return [CSV_HEADERS, ...rows].map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
 }
 
-function escapeCsvValue(value: string | number): string {
+function escapeCsvValue(value: string | number | boolean): string {
   const text = String(value);
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
