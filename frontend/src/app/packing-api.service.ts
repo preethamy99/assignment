@@ -1,4 +1,4 @@
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 
@@ -10,12 +10,7 @@ export class PackingApiService {
 
   calculate(
     packages: PackageInput[],
-    apiToken: string,
   ): Observable<PackingResponse> {
-    return this.http.post<PackingResponse>('/api/v1/pack', packages, {
-      headers: new HttpHeaders({
-        Authorization: `Bearer ${apiToken}`,
-      }),
-    });
+    return this.http.post<PackingResponse>('/api/v1/pack', packages);
   }
 }

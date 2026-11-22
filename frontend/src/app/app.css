@@ -257,7 +257,8 @@
   stroke-width: 1.2;
 }
 
-.token-block input {
+.token-block input,
+.login-form > input {
   width: 100%;
   height: 39px;
   margin-top: 9px;
@@ -273,13 +274,90 @@
 }
 
 .token-block input:focus,
+.login-form > input:focus,
 .field input:focus {
   border-color: var(--moss);
   box-shadow: 0 0 0 3px rgb(102 130 99 / 12%);
 }
 
-.token-block input::placeholder {
+.token-block input::placeholder,
+.login-form > input::placeholder {
   color: #a4a79e;
+}
+
+.login-form {
+  margin-top: 24px;
+}
+
+.login-password-label {
+  display: block;
+  margin-top: 17px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.login-form > input {
+  margin-top: 7px;
+}
+
+.login-form .field-hint {
+  margin-top: 9px;
+}
+
+.login-form .field-hint strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.login-button {
+  width: 100%;
+  margin-top: 21px;
+}
+
+.sign-out-button {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.sign-out-button:hover {
+  border-color: var(--clay);
+  color: var(--clay);
+}
+
+.signed-in-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 20px 0 17px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: #f5f7f2;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.signed-in-note .status-dot {
+  flex: 0 0 auto;
+}
+
+.signed-in-note strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.session-duration {
+  margin-left: auto;
+  color: var(--moss);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
 }
 
 .field-hint {
@@ -361,6 +439,132 @@
 .remove-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.import-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 5px;
+  padding: 12px 13px;
+  border: 1px dashed #d7dbd1;
+  border-radius: 8px;
+  background: #fbfbf8;
+}
+
+.import-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.import-copy strong,
+.import-copy small {
+  display: block;
+}
+
+.import-copy strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.import-copy small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.import-icon {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  background: #eff2eb;
+  color: var(--moss);
+}
+
+.import-icon svg {
+  width: 17px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.import-button {
+  position: relative;
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  overflow: hidden;
+  border: 1px solid #dfe5dc;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--moss);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.import-button:hover:not(.import-button-disabled) {
+  border-color: var(--moss);
+  background: #f5f8f3;
+}
+
+.import-button input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: inherit;
+  opacity: 0;
+}
+
+.import-button:focus-within {
+  outline: 3px solid rgb(102 130 99 / 25%);
+  outline-offset: 2px;
+}
+
+.import-button-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.import-hint {
+  margin: 0 2px 12px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.import-hint a {
+  color: var(--moss);
+  font-weight: 650;
+  text-underline-offset: 2px;
+}
+
+.import-feedback {
+  margin: -5px 2px 11px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.import-success {
+  color: var(--moss);
+}
+
+.import-failure {
+  color: #ad5144;
 }
 
 .package-list {
@@ -568,6 +772,22 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.assigned-packages {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assigned-packages li {
+  font-size: 9px;
+}
+
+.assigned-packages li span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
 }
 
 .result-panel {
@@ -865,6 +1085,17 @@
   .field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .import-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-button {
+    width: 100%;
+  }
+
+
 
   .form-footer {
     align-items: stretch;

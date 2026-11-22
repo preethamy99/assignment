@@ -36,35 +36,80 @@
     <section class="panel input-panel" aria-labelledby="packages-heading">
       <div class="panel-topline">
         <div>
-          <p class="section-kicker">SHIPMENT SETUP</p>
-          <h2 id="packages-heading">Your packages</h2>
+          <p class="section-kicker">
+            {{ auth.isAuthenticated() ? 'SHIPMENT SETUP' : 'ACCOUNT ACCESS' }}
+          </p>
+          <h2 id="packages-heading">
+            {{ auth.isAuthenticated() ? 'Your packages' : 'Sign in to continue' }}
+          </h2>
         </div>
-        <span class="step-badge">STEP 01 <span>/ 02</span></span>
+        @if (auth.isAuthenticated()) {
+          <button class="sign-out-button" type="button" (click)="logout()">
+            Sign out
+          </button>
+        } @else {
+          <span class="step-badge">SECURE LOGIN</span>
+        }
       </div>
 
-      <form [formGroup]="packageForm" (ngSubmit)="calculateBoxes()">
-        <div class="token-block">
+      @if (!auth.isAuthenticated()) {
+        <form class="login-form" [formGroup]="loginForm" (ngSubmit)="login()">
           <div class="token-label-row">
-            <label for="api-token">API access token</label>
+            <label for="login-email">Email address</label>
             <span class="secure-label">
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3 7h10v7H3z" />
               </svg>
-              BEARER AUTH
+              SIGNED JWT SESSION
             </span>
           </div>
           <input
-            id="api-token"
-            type="password"
-            autocomplete="off"
-            [formControl]="apiToken"
-            placeholder="Paste the backend API token"
+            id="login-email"
+            type="email"
+            autocomplete="username"
+            formControlName="email"
+            placeholder="you@example.com"
           />
-          <p class="field-hint">Used for this request only; never saved in the browser.</p>
-          @if (apiToken.touched && apiToken.invalid) {
-            <p class="field-error">Enter the token configured for the backend.</p>
+          @if (loginForm.controls.email.touched && loginForm.controls.email.invalid) {
+            <p class="field-error">Enter a valid email address.</p>
           }
-        </div>
+          <label class="login-password-label" for="login-password">Password</label>
+          <input
+            id="login-password"
+            type="password"
+            autocomplete="current-password"
+            formControlName="password"
+            placeholder="Enter your password"
+          />
+          @if (loginForm.controls.password.touched && loginForm.controls.password.invalid) {
+            <p class="field-error">Password is required.</p>
+          }
+          <p class="field-hint">
+            Demo credentials are listed in the project README.
+          </p>
+          <button
+            class="calculate-button login-button"
+            type="submit"
+            [disabled]="isLoggingIn()"
+          >
+            @if (isLoggingIn()) {
+              <span class="spinner" aria-hidden="true"></span>
+              Signing in
+            } @else {
+              Sign in securely
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M4 10h12m-5-5 5 5-5 5" />
+              </svg>
+            }
+          </button>
+        </form>
+      } @else {
+        <form [formGroup]="packageForm" (ngSubmit)="calculateBoxes()">
+          <div class="signed-in-note">
+            <span class="status-dot"></span>
+            Signed in as <strong>{{ auth.userEmail() }}</strong>
+            <span class="session-duration">SESSION EXPIRES IN 30 MIN</span>
+          </div>
 
         <div class="package-list-heading">
           <div class="list-title">
@@ -80,19 +125,62 @@
           <button
             class="add-button"
             type="button"
-            [disabled]="!canAddPackage || isSubmitting()"
+            [disabled]="!canAddPackage || isSubmitting() || isImporting()"
             (click)="addPackage()"
           >
             <span aria-hidden="true">+</span> Add package
           </button>
         </div>
 
+        <div class="import-panel">
+          <div class="import-copy">
+            <span class="import-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" fill="none">
+                <path d="M10 13V3m0 0L6.5 6.5M10 3l3.5 3.5M3 11v5h14v-5" />
+              </svg>
+            </span>
+            <div>
+              <strong>Import multiple packages</strong>
+              <small>Append CSV or Excel rows using the required column headers.</small>
+            </div>
+          </div>
+          <label
+            class="import-button"
+            [class.import-button-disabled]="!canImportPackages"
+          >
+            <input
+              type="file"
+              accept=".csv,.xls,.xlsx"
+              [disabled]="!canImportPackages"
+              (change)="importPackages($event)"
+            />
+            {{ isImporting() ? 'Reading file...' : 'Choose file' }}
+          </label>
+        </div>
+        <p class="import-hint">
+          Required headers: id, width, height, length, weight. First worksheet is used.
+          Up to 500 packages total; imports are appended.
+          <a href="package-template.csv" download>Download CSV template</a>
+          ·
+          <a href="package-test-20.csv" download>Download 20-row test file</a>
+        </p>
+        @if (importSuccessMessage()) {
+          <p class="import-feedback import-success" role="status">
+            {{ importSuccessMessage() }}
+          </p>
+        }
+        @if (importErrorMessage()) {
+          <p class="import-feedback import-failure" role="alert">
+            {{ importErrorMessage() }}
+          </p>
+        }
+
         <div class="package-list" formArrayName="packages">
           @for (packageRow of packages.controls; track packageRow; let index = $index) {
             <fieldset
               class="package-card"
               [formGroupName]="index"
-              [disabled]="isSubmitting()"
+              [disabled]="isSubmitting() || isImporting()"
             >
               <div class="package-card-top">
                 <div class="package-index">
@@ -198,7 +286,7 @@
           <button
             class="calculate-button"
             type="submit"
-            [disabled]="isSubmitting() || apiToken.invalid || packageForm.invalid"
+            [disabled]="isSubmitting() || isImporting() || packageForm.invalid"
           >
             @if (isSubmitting()) {
               <span class="spinner" aria-hidden="true"></span>
@@ -211,7 +299,49 @@
             }
           </button>
         </div>
-      </form>
+        </form>
+      }
+
+      @if (result() !== null && boxes().length > 0) {
+        <section aria-labelledby="assignment-heading">
+          <div class="package-list-heading">
+            <span class="list-title" id="assignment-heading">Items by box</span>
+            <button
+              class="add-button"
+              type="button"
+              (click)="downloadAssignments()"
+            >
+              Download CSV
+            </button>
+          </div>
+          <div class="package-list">
+            @for (box of boxes(); track box.box_number) {
+              <article class="package-card">
+                <div class="package-card-top">
+                  <strong>Box {{ box.box_number }}</strong>
+                  <span class="catalogue-tag">Type {{ box.box_type }}</span>
+                </div>
+                <p class="form-note">
+                  {{ box.width }} × {{ box.height }} × {{ box.length }} units
+                  <span>·</span>
+                  {{ box.total_weight }} / {{ box.max_weight }} weight
+                </p>
+                <ul class="package-list assigned-packages">
+                  @for (item of box.packages; track $index) {
+                    <li>
+                      <strong>Package #{{ item.id }}</strong>
+                      <span>
+                        {{ item.width }} × {{ item.height }} × {{ item.length }}
+                        units · {{ item.weight }} weight
+                      </span>
+                    </li>
+                  }
+                </ul>
+              </article>
+            }
+          </div>
+        </section>
+      }
     </section>
 
     <aside class="panel result-panel" aria-labelledby="result-heading">
@@ -237,7 +367,9 @@
             </svg>
           </div>
           <p class="result-unit">Your box count<br />will appear here</p>
-          <p class="result-caption">Add your API token, then run the calculation.</p>
+          <p class="result-caption">
+            {{ auth.isAuthenticated() ? 'Add your packages and run the calculation.' : 'Sign in to start your packing calculation.' }}
+          </p>
         }
       </div>
 
@@ -250,7 +382,7 @@
 
       <div class="catalogue-card">
         <div class="catalogue-heading">
-          <span>AVAILABLE BOX</span>
+          <span>LARGEST AVAILABLE BOX</span>
           <span class="catalogue-tag">TYPE C</span>
         </div>
         <div class="catalogue-dimensions">
@@ -268,7 +400,7 @@
 
       <div class="result-footnote">
         <span class="footnote-mark">i</span>
-        <p>Packages may be rotated. The result respects physical placement and weight limits.</p>
+        <p>JWT authentication protects the packing API. Sessions expire after 30 minutes.</p>
       </div>
     </aside>
   </div>
@@ -276,5 +408,6 @@
   <footer class="page-footer">
     <span>PACKWELL <span class="footer-dot">•</span> SHIPPING TOOLS</span>
     <span>BUILT FOR BETTER FITS</span>
+
   </footer>
 </main>
