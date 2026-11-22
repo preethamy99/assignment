@@ -1,0 +1,143 @@
+{
+  "info": {
+    "_postman_id": "c1b09aa3-7155-4db4-bdde-20ac12c695d1",
+    "name": "Shipping Box Calculator API",
+    "description": "Authenticate with the demo account, then calculate the box count. Run the login request first; its test script saves the JWT for the packing request.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Sign in and save JWT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/token",
+            "description": "Exchange the demo email and password for a JWT. The test script stores access_token in this collection for the packing request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('jwt', response.access_token);",
+                  "    pm.test('JWT was returned', function () {",
+                  "        pm.expect(response.access_token).to.be.a('string').and.not.empty;",
+                  "        pm.expect(response.token_type).to.eql('bearer');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Run this login request before sending a packing request."
+    },
+    {
+      "name": "Packing",
+      "item": [
+        {
+          "name": "Calculate box count",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{jwt}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  { \"id\": 123, \"width\": 10, \"height\": 10, \"length\": 10, \"weight\": 5 },\n  { \"id\": 125, \"width\": 5, \"height\": 5, \"length\": 10, \"weight\": 10 }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/pack",
+            "description": "Uses the JWT saved by the sign-in request. The sample packages should fit in one box."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Packing request succeeds', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains a box count', function () {",
+                  "    pm.expect(pm.response.json().box_count).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ],
+      "description": "Requires a JWT from the Authentication folder."
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "test@example.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jwt",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
