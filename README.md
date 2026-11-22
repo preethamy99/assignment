@@ -236,6 +236,7 @@ Implement RBAC for different roles.
 Deploy this application into cloud.
 More features into Frontend application for more enhanced user experience.
 Implement pagination, or sse for endpoints if required for large data
+Add realtime RDBMS either MySQL or PostgressSQL or NoSQL like MongoDB.
 
 ## Frontend
 
