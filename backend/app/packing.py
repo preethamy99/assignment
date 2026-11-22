@@ -40,6 +40,7 @@ class Package:
     height: float
     length: float
     weight: float
+    fragile: bool = False
 
     @property
     def dimensions(self) -> tuple[float, float, float]:
@@ -59,6 +60,21 @@ class PackedBox:
     @property
     def total_weight(self) -> float:
         return sum(package.weight for package in self.packages)
+
+
+SpecialHandlingReason = Literal["fragile", "oversized", "overweight"]
+
+
+@dataclass(frozen=True)
+class SpecialHandlingItem:
+    package: Package
+    reasons: tuple[SpecialHandlingReason, ...]
+
+
+@dataclass(frozen=True)
+class PackingPlan:
+    boxes: tuple[PackedBox, ...]
+    special_items: tuple[SpecialHandlingItem, ...]
 
 
 class UnpackablePackageError(ValueError):
@@ -149,6 +165,29 @@ def _smallest_fitting_box_type(packages: list[Package]) -> BoxType:
         if _fits_in_box_type(packages, box_type):
             return box_type
     return PACKING_BOX
+
+
+def plan_packages(packages: list[Package]) -> PackingPlan:
+    packable_packages: list[Package] = []
+    special_items: list[SpecialHandlingItem] = []
+
+    for package in packages:
+        reasons: list[SpecialHandlingReason] = []
+        if package.fragile:
+            reasons.append("fragile")
+        if package.weight > PACKING_BOX.max_weight:
+            reasons.append("overweight")
+        if _find_placement(package, [PACKING_BOX.dimensions]) is None:
+            reasons.append("oversized")
+
+        if reasons:
+            special_items.append(SpecialHandlingItem(package, tuple(reasons)))
+        else:
+            packable_packages.append(package)
+
+    boxes = tuple(pack_packages(packable_packages))
+    special_items.sort(key=lambda item: item.package.id)
+    return PackingPlan(boxes, tuple(special_items))
 
 
 def pack_packages(packages: list[Package]) -> list[PackedBox]:

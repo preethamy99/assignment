@@ -1,6 +1,11 @@
 import unittest
 
-from app.packing import Package, UnpackablePackageError, pack_packages
+from app.packing import (
+    Package,
+    UnpackablePackageError,
+    pack_packages,
+    plan_packages,
+)
 
 
 def package(
@@ -9,8 +14,9 @@ def package(
     height: float = 10,
     length: float = 10,
     weight: float = 5,
+    fragile: bool = False,
 ) -> Package:
-    return Package(package_id, width, height, length, weight)
+    return Package(package_id, width, height, length, weight, fragile)
 
 
 class PackingTests(unittest.TestCase):
@@ -48,6 +54,35 @@ class PackingTests(unittest.TestCase):
     def test_keeps_box_c_for_package_that_only_fits_box_c(self) -> None:
         boxes = pack_packages([package(1, 300, 400, 300, 3000)])
         self.assertEqual(boxes[0].box_type.name, "C")
+
+    def test_fragile_package_is_routed_to_special_handling(self) -> None:
+        plan = plan_packages([package(1, fragile=True)])
+        self.assertEqual(plan.boxes, ())
+        self.assertEqual(plan.special_items[0].package.id, 1)
+        self.assertEqual(plan.special_items[0].reasons, ("fragile",))
+
+    def test_oversized_package_is_routed_to_special_handling(self) -> None:
+        plan = plan_packages([package(7, 401, 1, 1)])
+        self.assertEqual(plan.boxes, ())
+        self.assertEqual(plan.special_items[0].reasons, ("oversized",))
+
+    def test_overweight_package_is_routed_to_special_handling(self) -> None:
+        plan = plan_packages([package(8, weight=3001)])
+        self.assertEqual(plan.boxes, ())
+        self.assertEqual(plan.special_items[0].reasons, ("overweight",))
+
+    def test_packable_items_remain_in_plan_with_special_items(self) -> None:
+        plan = plan_packages(
+            [package(1), package(2, 401, 1, 1), package(3, fragile=True)]
+        )
+        self.assertEqual(
+            [item.id for box in plan.boxes for item in box.packages],
+            [1],
+        )
+        self.assertEqual(
+            [item.package.id for item in plan.special_items],
+            [2, 3],
+        )
 
     def test_package_that_exceeds_box_dimensions_is_rejected(self) -> None:
         with self.assertRaises(UnpackablePackageError):

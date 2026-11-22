@@ -1,28 +1,40 @@
+import csv
+import io
+import json
+import re
+from datetime import datetime, timezone
 from typing import Literal
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth import get_current_user, router as auth_router
+from app.assistance_store import load_requests, save_request
 from app.packing import PackedBox, Package as PackingPackage
-from app.packing import UnpackablePackageError, pack_packages
+from app.packing import PackingPlan, SpecialHandlingItem, SpecialHandlingReason
+from app.packing import UnpackablePackageError, plan_packages
 
 app = FastAPI(
     title="Shipping Box Calculator API",
     version="1.0.0",
     description=(
-        "Calculate shipping boxes and return each box's package assignments. "
+        "Calculate box assignments and identify items requiring special handling. "
         "Sign in at `/api/v1/auth/token` to receive a JWT before calling "
-        "the protected packing endpoint."
+        "protected endpoints."
     ),
     openapi_tags=[
         {
             "name": "authentication",
             "description": "Sign in and issue short-lived JWT access tokens.",
-        }
+        },
+        {
+            "name": "assistance",
+            "description": "Submit and review special-handling requests.",
+        },
     ],
 )
 app.include_router(auth_router)
@@ -38,6 +50,7 @@ class PackageInput(BaseModel):
                 "height": 10,
                 "length": 10,
                 "weight": 5,
+                "fragile": False,
             }
         },
     )
@@ -47,6 +60,7 @@ class PackageInput(BaseModel):
     height: float = Field(gt=0, allow_inf_nan=False)
     length: float = Field(gt=0, allow_inf_nan=False)
     weight: float = Field(ge=0, allow_inf_nan=False)
+    fragile: bool = False
 
 
 class PackageAssignment(BaseModel):
@@ -55,6 +69,7 @@ class PackageAssignment(BaseModel):
     height: float
     length: float
     weight: float
+    fragile: bool
 
 
 class BoxAssignment(BaseModel):
@@ -66,6 +81,16 @@ class BoxAssignment(BaseModel):
     max_weight: float
     total_weight: float
     packages: list[PackageAssignment]
+
+
+class SpecialHandlingAssignment(BaseModel):
+    id: int
+    width: float
+    height: float
+    length: float
+    weight: float
+    fragile: bool
+    reasons: list[SpecialHandlingReason]
 
 
 class PackingResult(BaseModel):
@@ -89,6 +114,7 @@ class PackingResult(BaseModel):
                                 "height": 10,
                                 "length": 10,
                                 "weight": 5,
+                                "fragile": False,
                             },
                             {
                                 "id": 125,
@@ -96,16 +122,76 @@ class PackingResult(BaseModel):
                                 "height": 5,
                                 "length": 10,
                                 "weight": 10,
+                                "fragile": False,
                             },
                         ],
                     }
                 ],
+                "special_handling_required": False,
+                "special_items": [],
             }
         }
     )
 
     box_count: int
     boxes: list[BoxAssignment]
+    special_handling_required: bool
+    special_items: list[SpecialHandlingAssignment]
+
+
+class AssistanceRequestSubmission(BaseModel):
+    contact_name: str = Field(min_length=1, max_length=150)
+    contact_email: str = Field(min_length=3, max_length=254)
+    contact_phone: str = Field(min_length=7, max_length=32)
+    notes: str | None = Field(default=None, max_length=1000)
+    packages: list[PackageInput] = Field(min_length=1, max_length=500)
+
+    @field_validator("contact_name", "contact_email", "contact_phone")
+    @classmethod
+    def strip_contact_fields(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("This contact field is required.")
+        return normalized
+
+    @field_validator("contact_email")
+    @classmethod
+    def validate_contact_email(cls, value: str) -> str:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError("Enter a valid contact email.")
+        return value.lower()
+
+    @field_validator("contact_phone")
+    @classmethod
+    def validate_contact_phone(cls, value: str) -> str:
+        if not re.fullmatch(r"[+()\d .-]{7,32}", value) or not any(
+            character.isdigit() for character in value
+        ):
+            raise ValueError("Enter a valid contact phone number.")
+        return value
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        return normalized or None
+
+
+class AssistanceRequestReceipt(BaseModel):
+    request_id: str
+    submitted_at: str
+    status: Literal["submitted"]
+
+
+class AssistanceRequestRecord(AssistanceRequestReceipt):
+    contact_name: str
+    contact_email: str
+    contact_phone: str
+    notes: str | None
+    box_count: int
+    boxes: list[BoxAssignment]
+    special_handling_required: bool
+    special_items: list[SpecialHandlingAssignment]
 
 
 @app.exception_handler(RequestValidationError)
@@ -115,7 +201,10 @@ async def validation_exception_handler(
     is_packing_request = _request.url.path == "/api/v1/pack"
     detail = "Invalid package list." if is_packing_request else "Invalid request."
     errors = exc.errors()
-    if _request.url.path == "/api/v1/auth/token":
+    if _request.url.path in {
+        "/api/v1/auth/token",
+        "/api/v1/assistance-requests",
+    }:
         errors = [
             {key: value for key, value in error.items() if key != "input"}
             for error in errors
@@ -150,36 +239,199 @@ async def unpackable_exception_handler(
     summary="Calculate boxes and package assignments",
     description=(
         "Accept a JSON array of packages. Dimensions must be positive and "
-        "weights non-negative. Packages may be rotated. The response includes "
-        "each box type and its assigned packages. A package that cannot fit "
-        "is reported with HTTP 422."
+        "weights non-negative. Packages may be rotated. Fragile, overweight, "
+        "and oversized packages are returned separately for assistance."
     ),
-    response_description="The box count and package assignments for each box.",
+    response_description=(
+        "The box count, package assignments, and any special-handling items."
+    ),
     responses={
         401: {"description": "A valid JWT bearer token is required."},
-        422: {
-            "description": "Invalid package data or a package that fits no box."
-        },
+        422: {"description": "Invalid package data."},
         503: {"description": "JWT signing is not securely configured."},
     },
 )
 def calculate_boxes(
     packages: list[PackageInput], _user: str = Depends(get_current_user)
 ) -> PackingResult:
-    packing_packages = [
-        PackingPackage(
-            id=package.id,
-            width=package.width,
-            height=package.height,
-            length=package.length,
-            weight=package.weight,
+    plan = plan_packages([_to_packing_package(package) for package in packages])
+    return _to_packing_result(plan)
+
+
+@app.post(
+    "/api/v1/assistance-requests",
+    response_model=AssistanceRequestReceipt,
+    status_code=201,
+    tags=["assistance"],
+    summary="Submit an assistance request",
+    description=(
+        "Save customer contact details and a backend-calculated snapshot of "
+        "the order for fragile, overweight, or oversized packages."
+    ),
+    responses={
+        401: {"description": "A valid JWT bearer token is required."},
+        422: {
+            "description": (
+                "Invalid contact or package data, or no item requires assistance."
+            )
+        },
+        503: {"description": "JWT signing is not securely configured."},
+    },
+)
+def submit_assistance_request(
+    submission: AssistanceRequestSubmission,
+    _user: str = Depends(get_current_user),
+) -> AssistanceRequestReceipt:
+    plan = plan_packages(
+        [_to_packing_package(package) for package in submission.packages]
+    )
+    if not plan.special_items:
+        raise HTTPException(
+            status_code=422,
+            detail="This order has no items requiring special handling.",
         )
-        for package in packages
+
+    request_id = str(uuid4())
+    submitted_at = datetime.now(timezone.utc).isoformat()
+    record = _to_assistance_record(request_id, submitted_at, submission, plan)
+    save_request(request_id, submitted_at, record.model_dump_json())
+    return AssistanceRequestReceipt(
+        request_id=request_id,
+        submitted_at=submitted_at,
+        status="submitted",
+    )
+
+
+@app.get(
+    "/api/v1/assistance-requests",
+    response_model=list[AssistanceRequestRecord],
+    tags=["assistance"],
+    summary="Review submitted assistance requests",
+    description="Return stored requests and their complete order snapshots.",
+    responses={
+        401: {"description": "A valid JWT bearer token is required."},
+        503: {"description": "JWT signing is not securely configured."},
+    },
+)
+def list_assistance_requests(
+    _user: str = Depends(get_current_user),
+) -> list[AssistanceRequestRecord]:
+    return [
+        AssistanceRequestRecord.model_validate(request)
+        for request in load_requests()
     ]
-    packed_boxes = pack_packages(packing_packages)
+
+
+@app.get(
+    "/api/v1/assistance-requests/export",
+    tags=["assistance"],
+    summary="Export assistance requests as CSV",
+    responses={
+        401: {"description": "A valid JWT bearer token is required."},
+        503: {"description": "JWT signing is not securely configured."},
+    },
+)
+def export_assistance_requests(
+    _user: str = Depends(get_current_user),
+) -> StreamingResponse:
+    records = list_assistance_requests(_user)
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "request_id",
+            "submitted_at",
+            "contact_name",
+            "contact_email",
+            "contact_phone",
+            "notes",
+            "item_status",
+            "box_number",
+            "box_type",
+            "package_id",
+            "width",
+            "height",
+            "length",
+            "weight",
+            "fragile",
+            "handling_reasons",
+        ]
+    )
+    for record in records:
+        for box in record.boxes:
+            for package in box.packages:
+                writer.writerow(
+                    _assistance_csv_row(
+                        record,
+                        "packed",
+                        box.box_number,
+                        box.box_type,
+                        package,
+                        [],
+                    )
+                )
+        for item in record.special_items:
+            writer.writerow(
+                _assistance_csv_row(
+                    record,
+                    "assistance required",
+                    "",
+                    "",
+                    item,
+                    item.reasons,
+                )
+            )
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="assistance-requests.csv"'
+        },
+    )
+
+
+def _to_packing_package(package: PackageInput) -> PackingPackage:
+    return PackingPackage(
+        id=package.id,
+        width=package.width,
+        height=package.height,
+        length=package.length,
+        weight=package.weight,
+        fragile=package.fragile,
+    )
+
+
+def _to_packing_result(plan: PackingPlan) -> PackingResult:
     return PackingResult(
-        box_count=len(packed_boxes),
-        boxes=[_to_box_assignment(box) for box in packed_boxes],
+        box_count=len(plan.boxes),
+        boxes=[_to_box_assignment(box) for box in plan.boxes],
+        special_handling_required=bool(plan.special_items),
+        special_items=[
+            _to_special_handling_assignment(item) for item in plan.special_items
+        ],
+    )
+
+
+def _to_assistance_record(
+    request_id: str,
+    submitted_at: str,
+    submission: AssistanceRequestSubmission,
+    plan: PackingPlan,
+) -> AssistanceRequestRecord:
+    return AssistanceRequestRecord(
+        request_id=request_id,
+        submitted_at=submitted_at,
+        status="submitted",
+        contact_name=submission.contact_name,
+        contact_email=submission.contact_email,
+        contact_phone=submission.contact_phone,
+        notes=submission.notes,
+        box_count=len(plan.boxes),
+        boxes=[_to_box_assignment(box) for box in plan.boxes],
+        special_handling_required=bool(plan.special_items),
+        special_items=[
+            _to_special_handling_assignment(item) for item in plan.special_items
+        ],
     )
 
 
@@ -199,7 +451,51 @@ def _to_box_assignment(box: PackedBox) -> BoxAssignment:
                 height=package.height,
                 length=package.length,
                 weight=package.weight,
+                fragile=package.fragile,
             )
             for package in box.packages
         ],
     )
+
+
+def _to_special_handling_assignment(
+    item: SpecialHandlingItem,
+) -> SpecialHandlingAssignment:
+    package = item.package
+    return SpecialHandlingAssignment(
+        id=package.id,
+        width=package.width,
+        height=package.height,
+        length=package.length,
+        weight=package.weight,
+        fragile=package.fragile,
+        reasons=list(item.reasons),
+    )
+
+
+def _assistance_csv_row(
+    record: AssistanceRequestRecord,
+    item_status: str,
+    box_number: int | str,
+    box_type: str,
+    package: PackageAssignment | SpecialHandlingAssignment,
+    reasons: list[str] | list[SpecialHandlingReason],
+) -> list[str | int | float | bool]:
+    return [
+        record.request_id,
+        record.submitted_at,
+        record.contact_name,
+        record.contact_email,
+        record.contact_phone,
+        record.notes or "",
+        item_status,
+        box_number,
+        box_type,
+        package.id,
+        package.width,
+        package.height,
+        package.length,
+        package.weight,
+        package.fragile,
+        "; ".join(reasons),
+    ]

@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,13 +13,21 @@ from app.main import app
 
 class PackingApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.database_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.database_directory.cleanup)
         self.environment = patch.dict(
             os.environ,
-            {"JWT_SECRET_KEY": "test-signing-key-that-is-at-least-32-bytes"},
+            {
+                "JWT_SECRET_KEY": "test-signing-key-that-is-at-least-32-bytes",
+                "ASSISTANCE_DB_PATH": str(
+                    Path(self.database_directory.name) / "assistance.sqlite3"
+                ),
+            },
         )
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.client = TestClient(app)
+        self.addCleanup(self.client.close)
         self._auth_headers: dict[str, str] | None = None
 
     @property
@@ -74,6 +83,8 @@ class PackingApiTests(unittest.TestCase):
         paths = openapi["paths"]
         self.assertIn("/api/v1/auth/token", paths)
         self.assertIn("/api/v1/pack", paths)
+        self.assertIn("/api/v1/assistance-requests", paths)
+        self.assertIn("/api/v1/assistance-requests/export", paths)
         self.assertEqual(
             paths["/api/v1/pack"]["post"]["security"],
             [{"HTTPBearer": []}],
@@ -114,6 +125,7 @@ class PackingApiTests(unittest.TestCase):
                                 "height": 10.0,
                                 "length": 10.0,
                                 "weight": 5.0,
+                                "fragile": False,
                             },
                             {
                                 "id": 125,
@@ -121,10 +133,13 @@ class PackingApiTests(unittest.TestCase):
                                 "height": 5.0,
                                 "length": 10.0,
                                 "weight": 10.0,
+                                "fragile": False,
                             },
                         ],
                     }
                 ],
+                "special_handling_required": False,
+                "special_items": [],
             },
         )
 
@@ -134,7 +149,15 @@ class PackingApiTests(unittest.TestCase):
             "/api/v1/pack", headers=self.auth_headers, json=[]
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"box_count": 0, "boxes": []})
+        self.assertEqual(
+            response.json(),
+            {
+                "box_count": 0,
+                "boxes": [],
+                "special_handling_required": False,
+                "special_items": [],
+            },
+        )
 
     def test_invalid_dimensions_return_validation_error(self) -> None:
         # Dimensions must be positive, so this request should fail validation.
@@ -146,15 +169,171 @@ class PackingApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["detail"], "Invalid package list.")
 
-    def test_unpackable_item_returns_422_with_package_id(self) -> None:
-        # A package larger than every available box should be identified.
+    def test_unpackable_item_is_returned_for_special_handling(self) -> None:
+        # A package larger than Box C is returned separately, not rejected.
         response = self.client.post(
             "/api/v1/pack",
             headers=self.auth_headers,
             json=[{"id": 9, "width": 401, "height": 1, "length": 1, "weight": 1}],
         )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["box_count"], 0)
+        self.assertEqual(response.json()["boxes"], [])
+        self.assertTrue(response.json()["special_handling_required"])
+        self.assertEqual(
+            response.json()["special_items"],
+            [
+                {
+                    "id": 9,
+                    "width": 401.0,
+                    "height": 1.0,
+                    "length": 1.0,
+                    "weight": 1.0,
+                    "fragile": False,
+                    "reasons": ["oversized"],
+                }
+            ],
+        )
+
+    def test_fragile_item_is_returned_for_special_handling(self) -> None:
+        response = self.client.post(
+            "/api/v1/pack",
+            headers=self.auth_headers,
+            json=[
+                {
+                    "id": 12,
+                    "width": 10,
+                    "height": 10,
+                    "length": 10,
+                    "weight": 5,
+                    "fragile": True,
+                }
+            ],
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["boxes"], [])
+        self.assertEqual(
+            response.json()["special_items"][0]["reasons"],
+            ["fragile"],
+        )
+
+    def test_assistance_request_is_saved_with_contact_and_order_details(self) -> None:
+        payload = {
+            "contact_name": "Alex Customer",
+            "contact_email": "alex@example.com",
+            "contact_phone": "+1 555-0100",
+            "notes": "Please handle the glass item carefully.",
+            "packages": [
+                {"id": 1, "width": 10, "height": 10, "length": 10, "weight": 5},
+                {
+                    "id": 2,
+                    "width": 10,
+                    "height": 10,
+                    "length": 10,
+                    "weight": 5,
+                    "fragile": True,
+                },
+                {"id": 3, "width": 401, "height": 1, "length": 1, "weight": 1},
+                {"id": 4, "width": 10, "height": 10, "length": 10, "weight": 3001},
+            ],
+        }
+        response = self.client.post(
+            "/api/v1/assistance-requests",
+            headers=self.auth_headers,
+            json=payload,
+        )
+        self.assertEqual(response.status_code, 201)
+        receipt = response.json()
+        self.assertEqual(receipt["status"], "submitted")
+        self.assertTrue(receipt["request_id"])
+
+        review = self.client.get(
+            "/api/v1/assistance-requests",
+            headers=self.auth_headers,
+        )
+        self.assertEqual(review.status_code, 200)
+        self.assertEqual(len(review.json()), 1)
+        record = review.json()[0]
+        self.assertEqual(record["request_id"], receipt["request_id"])
+        self.assertEqual(record["contact_name"], "Alex Customer")
+        self.assertEqual(record["contact_email"], "alex@example.com")
+        self.assertEqual(record["contact_phone"], "+1 555-0100")
+        self.assertEqual(record["notes"], payload["notes"])
+        self.assertEqual(record["box_count"], 1)
+        self.assertEqual(record["boxes"][0]["packages"][0]["id"], 1)
+        self.assertEqual(
+            [item["id"] for item in record["special_items"]],
+            [2, 3, 4],
+        )
+        self.assertEqual(
+            [item["reasons"] for item in record["special_items"]],
+            [["fragile"], ["oversized"], ["overweight"]],
+        )
+
+        export = self.client.get(
+            "/api/v1/assistance-requests/export",
+            headers=self.auth_headers,
+        )
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("attachment; filename=", export.headers["content-disposition"])
+        self.assertIn("alex@example.com", export.text)
+        self.assertIn("assistance required", export.text)
+        self.assertIn("overweight", export.text)
+
+    def test_assistance_request_requires_at_least_one_special_item(self) -> None:
+        response = self.client.post(
+            "/api/v1/assistance-requests",
+            headers=self.auth_headers,
+            json={
+                "contact_name": "Alex Customer",
+                "contact_email": "alex@example.com",
+                "contact_phone": "+1 555-0100",
+                "packages": [
+                    {
+                        "id": 1,
+                        "width": 10,
+                        "height": 10,
+                        "length": 10,
+                        "weight": 5,
+                    }
+                ],
+            },
+        )
         self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["detail"]["package_id"], 9)
+        self.assertEqual(
+            response.json()["detail"],
+            "This order has no items requiring special handling.",
+        )
+
+    def test_assistance_request_validation_does_not_echo_contact_data(self) -> None:
+        phone = "x" * 40
+        response = self.client.post(
+            "/api/v1/assistance-requests",
+            headers=self.auth_headers,
+            json={
+                "contact_name": "Alex Customer",
+                "contact_email": "alex@example.com",
+                "contact_phone": phone,
+                "packages": [
+                    {
+                        "id": 1,
+                        "width": 10,
+                        "height": 10,
+                        "length": 10,
+                        "weight": 5,
+                        "fragile": True,
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertNotIn(phone, response.text)
+
+    def test_assistance_request_endpoints_require_jwt(self) -> None:
+        review = self.client.get("/api/v1/assistance-requests")
+        export = self.client.get("/api/v1/assistance-requests/export")
+        self.assertEqual(review.status_code, 401)
+        self.assertEqual(export.status_code, 401)
 
     def test_missing_token_returns_401(self) -> None:
         # Protected endpoints reject requests without a JWT.

@@ -8,8 +8,13 @@ WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN groupadd --system app && useradd --system --gid app --create-home app
+RUN groupadd --system app \
+    && useradd --system --gid app --create-home app \
+    && mkdir -p /app/data \
+    && chown app:app /app/data
 COPY --chown=app:app backend/app ./app
+
+VOLUME ["/app/data"]
 
 USER app
 
