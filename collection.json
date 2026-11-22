@@ -146,7 +146,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"contact_name\": \"Alex Customer\",\n  \"contact_email\": \"alex@example.com\",\n  \"contact_phone\": \"+1 555-0100\",\n  \"notes\": \"Please review the glass item.\",\n  \"packages\": [\n    { \"id\": 123, \"width\": 10, \"height\": 10, \"length\": 10, \"weight\": 5, \"fragile\": false },\n    { \"id\": 901, \"width\": 10, \"height\": 10, \"length\": 10, \"weight\": 5, \"fragile\": true }\n  ]\n}",
+              "raw": "{\n  \"notes\": \"Please review the glass item.\",\n  \"packages\": [\n    { \"id\": 123, \"width\": 10, \"height\": 10, \"length\": 10, \"weight\": 5, \"fragile\": false },\n    { \"id\": 901, \"width\": 10, \"height\": 10, \"length\": 10, \"weight\": 5, \"fragile\": true }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -154,7 +154,7 @@
               }
             },
             "url": "{{baseUrl}}/api/v1/assistance-requests",
-            "description": "Creates a protected SQLite record with customer contact data, standard box assignments, and the special-item details."
+            "description": "Creates a protected SQLite record with the required order note, authenticated account email, standard box assignments, and special-item details."
           },
           "event": [
             {

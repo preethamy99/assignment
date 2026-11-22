@@ -165,18 +165,16 @@ the standard box assignments. The response includes a reason for each item.
 
 ### Request special handling
 
-When the packing response contains special items, the frontend can submit the
-customer's contact information and the package list to
-`POST /api/v1/assistance-requests`. The customer's name, email, phone, package
-details, standard box assignments, and special-handling reasons are stored
-together as one order snapshot in SQLite. A generated `request_id` is returned
-as the reference for that request.
+When the packing response contains special items, the frontend displays one
+required order-note field and automatically submits the current package list to
+`POST /api/v1/assistance-requests` when the note is entered. Package details,
+standard box assignments, special-handling reasons, the order note, and the
+authenticated account email are stored together as one order snapshot in
+SQLite. The user does not need to re-enter shipment items or contact details.
+A generated `request_id` is returned as the request reference.
 
 ```json
 {
-  "contact_name": "Alex Customer",
-  "contact_email": "alex@example.com",
-  "contact_phone": "+1 555-0100",
   "notes": "Please review the glass item.",
   "packages": [
     { "id": 123, "width": 10, "height": 10, "length": 10, "weight": 5 },
@@ -192,9 +190,10 @@ as the reference for that request.
 }
 ```
 
-The endpoint returns HTTP 201 when the request is saved. Contact name, email,
-and phone are required; notes are optional. Requests without at least one
-special-handling item are rejected. The protected
+The endpoint returns HTTP 201 when the request is saved. An order note is
+required; the account email is derived from the JWT, so no contact fields are
+entered in the assistance form. Requests without at least one special-handling
+item are rejected. The protected
 `GET /api/v1/assistance-requests` endpoint lists stored order snapshots for
 follow-up, and `GET /api/v1/assistance-requests/export` downloads them as CSV.
 The SQLite database defaults to `backend/data/assistance_requests.sqlite3`;
@@ -257,12 +256,15 @@ headers are `id`, `width`, `height`, `length`, and `weight`. An optional
 limited to 10 MB and 500 packages total. Use the
 [CSV template](./frontend/public/package-template.csv) as a starting point.
 The frontend fetches the JWT during sign-in and attaches it automatically to
-packing and assistance requests. The token remains in memory and expires
+packing and assistance requests. When special items are detected, the user
+enters an order note; the frontend automatically submits the request with the
+current shipment data. The token remains in memory and expires
 after 30 minutes. The Angular development-server proxy forwards `/api`
 requests to the local FastAPI service at `http://127.0.0.1:8000`. The summary
 shows standard box assignments and separates special-handling items. Customers
-can submit their required contact details; the team can review requests through
-the protected API or export them as CSV.
+can provide the required order note; the authenticated account email is stored
+automatically, and the team can review requests through the protected API or
+export them as CSV.
 
 Run frontend checks from `frontend/`:
 
