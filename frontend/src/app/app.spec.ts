@@ -87,6 +87,12 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Items by box');
     expect(fixture.nativeElement.textContent).toContain('Package #123');
+    expect(
+      fixture.nativeElement.querySelector('.result-panel #assignment-heading'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('.input-panel #assignment-heading'),
+    ).toBeNull();
   });
 
   it('shows an authentication error when login credentials are rejected', () => {

@@ -797,6 +797,11 @@
   overflow: hidden;
 }
 
+.result-panel-expanded {
+  position: static;
+  overflow: visible;
+}
+
 .result-spark {
   display: grid;
   width: 31px;
