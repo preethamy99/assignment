@@ -231,6 +231,11 @@ deploying with real customer data.
 With more time, I would compare the heuristic against a broader set of packing
 fixtures and add property-based tests for placement invariants.
 Add realtime metrics for obseravality.
+Implement access_token and refresh_token for long lived login.
+Implement RBAC for different roles.
+Deploy this application into cloud.
+More features into Frontend application for more enhanced user experience.
+Implement pagination, or sse for endpoints if required for large data
 
 ## Frontend
 
