@@ -15,6 +15,7 @@ import {
   ValidatorFn,
   Validators,
 } from '@angular/forms';
+import { debounceTime, merge, Subject } from 'rxjs';
 
 import { AuthService, LoginCredentials } from './auth.service';
 import {
@@ -71,6 +72,7 @@ const nonWhitespaceValidator: ValidatorFn = (
 export class App {
   readonly auth = inject(AuthService);
   private readonly packingApi = inject(PackingApiService);
+  private readonly assistanceSubmissionChanges = new Subject<void>();
 
   readonly packages = new FormArray<PackageRow>([]);
   readonly packageForm = new FormGroup({ packages: this.packages });
@@ -126,9 +128,12 @@ export class App {
       fragile: false,
     });
     this.packageForm.valueChanges.subscribe(() => this.clearResult());
-    this.assistanceForm.valueChanges.subscribe(() =>
-      this.trySubmitAssistanceWhenReady(),
-    );
+    merge(
+      this.assistanceForm.valueChanges,
+      this.assistanceSubmissionChanges,
+    )
+      .pipe(debounceTime(5000))
+      .subscribe(() => this.trySubmitAssistanceWhenReady());
   }
 
   get canAddPackage(): boolean {
@@ -275,7 +280,9 @@ export class App {
         this.specialItems.set(response.special_items);
         this.isAssistanceFormOpen.set(response.special_items.length > 0);
         this.isSubmitting.set(false);
-        this.trySubmitAssistanceWhenReady();
+        if (response.special_items.length > 0) {
+          this.assistanceSubmissionChanges.next();
+        }
       },
       error: (error: unknown) => {
         this.errorMessage.set(this.describeError(error, false));

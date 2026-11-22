@@ -167,7 +167,8 @@ the standard box assignments. The response includes a reason for each item.
 
 When the packing response contains special items, the frontend displays one
 required order-note field and automatically submits the current package list to
-`POST /api/v1/assistance-requests` when the note is entered. Package details,
+`POST /api/v1/assistance-requests` five seconds after the user stops typing.
+Package details,
 standard box assignments, special-handling reasons, the order note, and the
 authenticated account email are stored together as one order snapshot in
 SQLite. The user does not need to re-enter shipment items or contact details.
@@ -257,8 +258,9 @@ limited to 10 MB and 500 packages total. Use the
 [CSV template](./frontend/public/package-template.csv) as a starting point.
 The frontend fetches the JWT during sign-in and attaches it automatically to
 packing and assistance requests. When special items are detected, the user
-enters an order note; the frontend automatically submits the request with the
-current shipment data. The token remains in memory and expires
+enters an order note; the frontend automatically submits the request five
+seconds after typing stops, with the current shipment data. The token remains
+in memory and expires
 after 30 minutes. The Angular development-server proxy forwards `/api`
 requests to the local FastAPI service at `http://127.0.0.1:8000`. The summary
 shows standard box assignments and separates special-handling items. Customers

@@ -440,11 +440,11 @@
                   maxlength="1000"
                   required
                   formControlName="notes"
-                  [disabled]="isSubmittingAssistance()"
+                  [readonly]="isSubmittingAssistance()"
                   aria-describedby="assistance-note-hint"
                 ></textarea>
                 <small id="assistance-note-hint">
-                  The request sends automatically when you add a note.
+                  The request sends automatically 5 seconds after you stop typing.
                 </small>
                 @if (assistanceForm.controls.notes.touched && assistanceForm.controls.notes.invalid) {
                   <small class="field-error">Enter an order note.</small>

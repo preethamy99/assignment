@@ -1,11 +1,5 @@
-import {
-  provideHttpClient,
-  withInterceptors,
-} from '@angular/common/http';
-import {
-  HttpTestingController,
-  provideHttpClientTesting,
-} from '@angular/common/http/testing';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
 import { App } from './app';
@@ -56,9 +50,7 @@ describe('App', () => {
 
     const request = httpTestingController.expectOne('/api/v1/pack');
     expect(request.request.method).toBe('POST');
-    expect(request.request.headers.get('Authorization')).toBe(
-      'Bearer signed-test-token',
-    );
+    expect(request.request.headers.get('Authorization')).toBe('Bearer signed-test-token');
     expect(request.request.body).toEqual([
       {
         id: 123,
@@ -117,15 +109,11 @@ describe('App', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Items by box');
     expect(fixture.nativeElement.textContent).toContain('Package #123');
-    expect(
-      fixture.nativeElement.querySelector('.result-panel #assignment-heading'),
-    ).not.toBeNull();
-    expect(
-      fixture.nativeElement.querySelector('.input-panel #assignment-heading'),
-    ).toBeNull();
+    expect(fixture.nativeElement.querySelector('.result-panel #assignment-heading')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.input-panel #assignment-heading')).toBeNull();
   });
 
-  it('automatically submits the current shipment when its order note is valid', () => {
+  it('submits five seconds after the user stops typing an order note', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     app.auth.accessToken.set('signed-test-token');
@@ -151,20 +139,19 @@ describe('App', () => {
     });
 
     fixture.detectChanges();
-    const assistanceForm =
-      fixture.nativeElement.querySelector('.assistance-form');
+    const assistanceForm = fixture.nativeElement.querySelector('.assistance-form');
     expect(assistanceForm.querySelector('input')).toBeNull();
     expect(assistanceForm.querySelectorAll('textarea').length).toBe(1);
     expect(app.assistanceForm.invalid).toBe(true);
 
     app.assistanceForm.controls.notes.setValue('Glass item');
+    httpTestingController.expectNone('/api/v1/assistance-requests');
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 4500));
+    httpTestingController.expectNone('/api/v1/assistance-requests');
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 600));
 
-    const request = httpTestingController.expectOne(
-      '/api/v1/assistance-requests',
-    );
-    expect(request.request.headers.get('Authorization')).toBe(
-      'Bearer signed-test-token',
-    );
+    const request = httpTestingController.expectOne('/api/v1/assistance-requests');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer signed-test-token');
     expect(request.request.body).toEqual({
       notes: 'Glass item',
       packages: [
@@ -192,7 +179,7 @@ describe('App', () => {
       status: 'submitted',
     });
     expect(app.assistanceReceipt()?.request_id).toBe('request-reference');
-  });
+  }, 7000);
 
   it('shows an authentication error when login credentials are rejected', () => {
     const fixture = TestBed.createComponent(App);
@@ -200,10 +187,9 @@ describe('App', () => {
     app.loginForm.controls.password.setValue('wrong-password');
     app.login();
 
-    httpTestingController.expectOne('/api/v1/auth/token').flush(
-      { detail: 'Invalid email or password.' },
-      { status: 401, statusText: 'Unauthorized' },
-    );
+    httpTestingController
+      .expectOne('/api/v1/auth/token')
+      .flush({ detail: 'Invalid email or password.' }, { status: 401, statusText: 'Unauthorized' });
 
     expect(app.errorMessage()).toContain('Email or password is incorrect');
   });
