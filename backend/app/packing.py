@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import permutations
+from typing import Literal
 
 
 @dataclass(frozen=True)
 class BoxType:
-    name: str
+    name: Literal["A", "B", "C"]
     width: float
     height: float
     length: float
@@ -49,6 +50,17 @@ class Package:
         return self.width * self.height * self.length
 
 
+@dataclass(frozen=True)
+class PackedBox:
+    box_number: int
+    box_type: BoxType
+    packages: tuple[Package, ...]
+
+    @property
+    def total_weight(self) -> float:
+        return sum(package.weight for package in self.packages)
+
+
 class UnpackablePackageError(ValueError):
     def __init__(self, package_id: int) -> None:
         self.package_id = package_id
@@ -60,10 +72,15 @@ class _OpenBox:
     box_type: BoxType
     remaining_weight: float
     free_spaces: list[tuple[float, float, float]] = field(default_factory=list)
+    packages: list[Package] = field(default_factory=list)
 
     @classmethod
     def create(cls, box_type: BoxType) -> _OpenBox:
-        return cls(box_type, box_type.max_weight, [box_type.dimensions])
+        return cls(
+            box_type=box_type,
+            remaining_weight=box_type.max_weight,
+            free_spaces=[box_type.dimensions],
+        )
 
 
 @dataclass(frozen=True)
@@ -105,10 +122,37 @@ def _place(box: _OpenBox, package: Package, placement: _Placement) -> None:
         space for space in remaining_spaces if all(dimension > 0 for dimension in space)
     )
     box.remaining_weight -= package.weight
+    box.packages.append(package)
 
 
-def pack_packages(packages: list[Package]) -> int:
-    """Pack packages with a deterministic 3D guillotine-space heuristic."""
+def _fits_in_box_type(packages: list[Package], box_type: BoxType) -> bool:
+    if sum(package.weight for package in packages) > box_type.max_weight:
+        return False
+
+    box = _OpenBox.create(box_type)
+    ordered_packages = sorted(
+        packages,
+        key=lambda package: (-package.volume, -package.weight, package.id),
+    )
+    for package in ordered_packages:
+        placement = _find_placement(package, box.free_spaces)
+        if placement is None:
+            return False
+        _place(box, package, placement)
+    return True
+
+
+def _smallest_fitting_box_type(packages: list[Package]) -> BoxType:
+    for box_type in sorted(BOX_TYPES, key=lambda candidate: candidate.volume):
+        if box_type.name == PACKING_BOX.name:
+            continue
+        if _fits_in_box_type(packages, box_type):
+            return box_type
+    return PACKING_BOX
+
+
+def pack_packages(packages: list[Package]) -> list[PackedBox]:
+    """Pack into the fewest heuristic bins, then downsize bins when possible."""
     open_boxes: list[_OpenBox] = []
     ordered_packages = sorted(
         packages,
@@ -139,4 +183,14 @@ def pack_packages(packages: list[Package]) -> int:
             _place(box, package, placement)
             open_boxes.append(box)
 
-    return len(open_boxes)
+    packed_boxes = []
+    for index, box in enumerate(open_boxes, start=1):
+        packages_in_box = tuple(sorted(box.packages, key=lambda package: package.id))
+        packed_boxes.append(
+            PackedBox(
+                box_number=index,
+                box_type=_smallest_fitting_box_type(list(packages_in_box)),
+                packages=packages_in_box,
+            )
+        )
+    return packed_boxes

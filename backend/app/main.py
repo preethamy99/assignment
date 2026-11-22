@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -5,14 +7,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import get_current_user, router as auth_router
-from app.packing import Package as PackingPackage
+from app.packing import PackedBox, Package as PackingPackage
 from app.packing import UnpackablePackageError, pack_packages
 
 app = FastAPI(
     title="Shipping Box Calculator API",
     version="1.0.0",
     description=(
-        "Calculate the number of shipping boxes for a package list. "
+        "Calculate shipping boxes and return each box's package assignments. "
         "Sign in at `/api/v1/auth/token` to receive a JWT before calling "
         "the protected packing endpoint."
     ),
@@ -47,10 +49,63 @@ class PackageInput(BaseModel):
     weight: float = Field(ge=0, allow_inf_nan=False)
 
 
+class PackageAssignment(BaseModel):
+    id: int
+    width: float
+    height: float
+    length: float
+    weight: float
+
+
+class BoxAssignment(BaseModel):
+    box_number: int
+    box_type: Literal["A", "B", "C"]
+    width: float
+    height: float
+    length: float
+    max_weight: float
+    total_weight: float
+    packages: list[PackageAssignment]
+
+
 class PackingResult(BaseModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"box_count": 1}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "box_count": 1,
+                "boxes": [
+                    {
+                        "box_number": 1,
+                        "box_type": "B",
+                        "width": 100,
+                        "height": 200,
+                        "length": 100,
+                        "max_weight": 1000,
+                        "total_weight": 15,
+                        "packages": [
+                            {
+                                "id": 123,
+                                "width": 10,
+                                "height": 10,
+                                "length": 10,
+                                "weight": 5,
+                            },
+                            {
+                                "id": 125,
+                                "width": 5,
+                                "height": 5,
+                                "length": 10,
+                                "weight": 10,
+                            },
+                        ],
+                    }
+                ],
+            }
+        }
+    )
 
     box_count: int
+    boxes: list[BoxAssignment]
 
 
 @app.exception_handler(RequestValidationError)
@@ -92,13 +147,14 @@ async def unpackable_exception_handler(
 @app.post(
     "/api/v1/pack",
     response_model=PackingResult,
-    summary="Calculate the required box count",
+    summary="Calculate boxes and package assignments",
     description=(
         "Accept a JSON array of packages. Dimensions must be positive and "
-        "weights non-negative. Packages may be rotated. A package that cannot "
-        "fit is reported with HTTP 422."
+        "weights non-negative. Packages may be rotated. The response includes "
+        "each box type and its assigned packages. A package that cannot fit "
+        "is reported with HTTP 422."
     ),
-    response_description="The number of shipping boxes required.",
+    response_description="The box count and package assignments for each box.",
     responses={
         401: {"description": "A valid JWT bearer token is required."},
         422: {
@@ -120,4 +176,30 @@ def calculate_boxes(
         )
         for package in packages
     ]
-    return PackingResult(box_count=pack_packages(packing_packages))
+    packed_boxes = pack_packages(packing_packages)
+    return PackingResult(
+        box_count=len(packed_boxes),
+        boxes=[_to_box_assignment(box) for box in packed_boxes],
+    )
+
+
+def _to_box_assignment(box: PackedBox) -> BoxAssignment:
+    return BoxAssignment(
+        box_number=box.box_number,
+        box_type=box.box_type.name,
+        width=box.box_type.width,
+        height=box.box_type.height,
+        length=box.box_type.length,
+        max_weight=box.box_type.max_weight,
+        total_weight=box.total_weight,
+        packages=[
+            PackageAssignment(
+                id=package.id,
+                width=package.width,
+                height=package.height,
+                length=package.length,
+                weight=package.weight,
+            )
+            for package in box.packages
+        ],
+    )

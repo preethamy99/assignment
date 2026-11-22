@@ -79,9 +79,12 @@ class PackingApiTests(unittest.TestCase):
             [{"HTTPBearer": []}],
         )
         self.assertIn("HTTPBearer", openapi["components"]["securitySchemes"])
+        schemas = openapi["components"]["schemas"]
+        self.assertIn("boxes", schemas["PackingResult"]["properties"])
+        self.assertIn("packages", schemas["BoxAssignment"]["properties"])
 
-    def test_post_returns_box_count(self) -> None:
-        # These two packages should share one box.
+    def test_post_returns_box_count_and_package_assignments(self) -> None:
+        # These two packages fit together in the smallest available box type.
         response = self.client.post(
             "/api/v1/pack",
             headers=self.auth_headers,
@@ -91,7 +94,39 @@ class PackingApiTests(unittest.TestCase):
             ],
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"box_count": 1})
+        self.assertEqual(
+            response.json(),
+            {
+                "box_count": 1,
+                "boxes": [
+                    {
+                        "box_number": 1,
+                        "box_type": "B",
+                        "width": 100.0,
+                        "height": 200.0,
+                        "length": 100.0,
+                        "max_weight": 1000.0,
+                        "total_weight": 15.0,
+                        "packages": [
+                            {
+                                "id": 123,
+                                "width": 10.0,
+                                "height": 10.0,
+                                "length": 10.0,
+                                "weight": 5.0,
+                            },
+                            {
+                                "id": 125,
+                                "width": 5.0,
+                                "height": 5.0,
+                                "length": 10.0,
+                                "weight": 10.0,
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
 
     def test_empty_list_returns_zero(self) -> None:
         # Empty input is valid and requires no boxes.
@@ -99,7 +134,7 @@ class PackingApiTests(unittest.TestCase):
             "/api/v1/pack", headers=self.auth_headers, json=[]
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"box_count": 0})
+        self.assertEqual(response.json(), {"box_count": 0, "boxes": []})
 
     def test_invalid_dimensions_return_validation_error(self) -> None:
         # Dimensions must be positive, so this request should fail validation.
